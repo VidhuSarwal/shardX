@@ -1,0 +1,12 @@
+# Copy this file to terraform.tfvars and fill in the role ARNs from the
+# main root module's outputs:
+#
+#   cd ../.. && terraform output api_role_arn shard_worker_role_arn
+#
+# aws_region = "us-east-1"
+# project_name = "shardx"
+#
+# allowed_role_arns = [
+#   "arn:aws:iam::123456789012:role/shardx-api-role",
+#   "arn:aws:iam::123456789012:role/shardx-shard-worker-role",
+# ]
