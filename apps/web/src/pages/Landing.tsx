@@ -82,15 +82,15 @@ const Landing = () => {
               <h2 id={`${c.id}-h`} className={`font-semibold leading-[1.02] tracking-tight ${i === 0 ? 'text-5xl md:text-7xl' : 'text-4xl md:text-6xl'}`}>
                 <SplitText text={c.headline} by="word" stagger={0.06} trigger={i !== 0} />
               </h2>
-              <Reveal delay={0.2} className="mt-6 max-w-lg text-base leading-relaxed text-muted-foreground md:text-lg"><p>{c.body}</p></Reveal>
+              <Reveal delay={0.2} immediate={i === 0} className="mt-6 max-w-lg text-base leading-relaxed text-muted-foreground md:text-lg"><p>{c.body}</p></Reveal>
               {c.pills.length > 0 && (
-                <Reveal delay={0.35} className="mt-6 flex flex-wrap gap-2">
+                <Reveal delay={0.35} immediate={i === 0} className="mt-6 flex flex-wrap gap-2">
                   {c.pills.map((p) => <span key={p} className="rounded-full border border-border bg-card/60 px-3 py-1 font-mono text-xs text-foreground/80">{p}</span>)}
                 </Reveal>
               )}
               {!webgl && <div className="mt-8"><ChapterFallback id={c.id} /></div>}
               {i === 0 && (
-                <Reveal delay={0.5} className="mt-10 flex flex-wrap items-center gap-3">
+                <Reveal delay={0.5} immediate className="mt-10 flex flex-wrap items-center gap-3">
                   <MagneticButton size="lg" asChild><Link to="/signup">Create your vault</Link></MagneticButton>
                   <MagneticButton size="lg" variant="outline" asChild><a href="#upload">See how it works <ArrowDown className="ml-2 h-4 w-4" /></a></MagneticButton>
                 </Reveal>

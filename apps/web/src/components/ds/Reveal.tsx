@@ -6,13 +6,13 @@ import { useReducedMotion } from '@/hooks/useReducedMotion';
 
 gsap.registerPlugin(ScrollTrigger, useGSAP);
 
-export const Reveal = ({ children, delay = 0, className, as = 'div' }: { children: ReactNode; delay?: number; className?: string; as?: keyof JSX.IntrinsicElements }) => {
+export const Reveal = ({ children, delay = 0, className, as = 'div', immediate = false }: { children: ReactNode; delay?: number; className?: string; as?: keyof JSX.IntrinsicElements; immediate?: boolean }) => {
   const ref = useRef<HTMLElement>(null);
   const reduced = useReducedMotion();
   useGSAP(() => {
     if (reduced || !ref.current) return;
     gsap.set(ref.current, { opacity: 0, y: 24 });
-    gsap.to(ref.current, { opacity: 1, y: 0, duration: 0.9, delay, ease: 'power3.out', scrollTrigger: { trigger: ref.current, start: 'top 85%', once: true } });
-  }, { dependencies: [reduced] });
+    gsap.to(ref.current, { opacity: 1, y: 0, duration: 0.9, delay, ease: 'power3.out', ...(immediate ? {} : { scrollTrigger: { trigger: ref.current, start: 'top 85%', once: true } }) });
+  }, { dependencies: [reduced, immediate] });
   return createElement(as as string, { ref, className }, children);
 };

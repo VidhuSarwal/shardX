@@ -1,4 +1,4 @@
-import { forwardRef, useImperativeHandle, useEffect, useState } from 'react';
+import { forwardRef, useImperativeHandle, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { EffectComposer, Bloom, Vignette } from '@react-three/postprocessing';
 import * as THREE from 'three';
@@ -9,11 +9,11 @@ import { Accents } from './Accents';
 
 export type LandingSceneHandle = { setProgress(p: number): void; setMouse(x: number, y: number): void };
 
-const CameraRig = ({ reduced }: { reduced: boolean }) => {
+const CameraRig = ({ reduced, mobile }: { reduced: boolean; mobile: boolean }) => {
   const { camera } = useThree();
   useFrame((_, dt) => {
     const { chapter, mouse } = progressStore;
-    const z = chapter === 2 ? 9 : chapter === 4 || chapter === 7 ? 8 : 7;
+    const z = chapter === 2 ? 9 : chapter === 4 || chapter === 7 ? 8 + (mobile ? 0 : 1.0) : 7;
     const targetX = reduced ? 0 : mouse[0] * 0.6;
     const targetY = (reduced ? 0 : mouse[1] * 0.4) + (chapter === 0 || chapter === 8 ? 1.2 : 0);
     camera.position.x = THREE.MathUtils.damp(camera.position.x, targetX, 3, dt);
@@ -22,6 +22,18 @@ const CameraRig = ({ reduced }: { reduced: boolean }) => {
     camera.lookAt(0, 0, 0);
   });
   return null;
+};
+
+/** Shifts the noise field + accents opposite the copy column so desktop chapters don't overlap the text. */
+const SceneShift = ({ mobile, reducedMotion, children }: { mobile: boolean; reducedMotion: boolean; children: ReactNode }) => {
+  const shift = useRef<THREE.Group>(null);
+  useFrame((_, dt) => {
+    const g = shift.current;
+    if (!g) return;
+    const target = mobile ? 0 : progressStore.chapter % 2 === 0 ? 2.3 : -2.3;
+    g.position.x = reducedMotion ? target : THREE.MathUtils.damp(g.position.x, target, 2.5, dt);
+  });
+  return <group ref={shift}>{children}</group>;
 };
 
 /** Pauses rendering when the tab is hidden. */
@@ -53,9 +65,11 @@ const LandingScene = forwardRef<LandingSceneHandle, { reducedMotion: boolean; mo
           <ambientLight intensity={0.4} />
           <pointLight position={[4, 4, 6]} intensity={30} color="#33e0ff" />
           <pointLight position={[-4, -2, 4]} intensity={20} color="#b56bff" />
-          <CameraRig reduced={reducedMotion} />
-          <NoiseField count={count} reduced={reducedMotion} />
-          <Accents reduced={reducedMotion} />
+          <CameraRig reduced={reducedMotion} mobile={mobile} />
+          <SceneShift mobile={mobile} reducedMotion={reducedMotion}>
+            <NoiseField count={count} reduced={reducedMotion} />
+            <Accents reduced={reducedMotion} />
+          </SceneShift>
           {!mobile && (
             <EffectComposer>
               <Bloom intensity={0.9} luminanceThreshold={0.2} luminanceSmoothing={0.6} mipmapBlur />
