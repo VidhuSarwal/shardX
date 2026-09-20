@@ -1,0 +1,4 @@
+/lnd2
+.env
+.env.local
+.env.*.local
