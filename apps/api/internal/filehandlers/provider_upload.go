@@ -12,20 +12,22 @@ import (
 // uploadChunksViaProvider uploads every chunk through activeStorageProvider
 // using the session ID as the target (an S3 key prefix). It mirrors
 // drivemanager.UploadChunksToDrivers, with one difference: a failed chunk
-// is enqueued as a RetryJob instead of aborting the session. Its
-// ChunkMetadata comes back with an empty DriveFileID (location) and its
-// path is returned in pendingPaths so the caller keeps the file on disk.
+// is returned as a RetryJob instead of aborting the session. Its
+// ChunkMetadata comes back with an empty DriveFileID (location) and the
+// caller keeps its file on disk and enqueues the job only once the key
+// file exists (cmd/shardworker refuses jobs for sessions without one).
 //
-// Only when the queue itself is unavailable (queue.ErrNotConfigured or a
-// send failure) does this fall back to Drive-style fail-fast: best-effort
-// delete of already-uploaded chunks and an error.
-func uploadChunksViaProvider(ctx context.Context, sessionID string, chunkPaths []string, plan []models.ChunkPlan, progressCallback func(int, int)) ([]models.ChunkMetadata, []string, error) {
+// Only when no queue is configured (NoopQueue) does this fall back to
+// Drive-style fail-fast: best-effort delete of already-uploaded chunks and
+// an error.
+func uploadChunksViaProvider(ctx context.Context, sessionID string, chunkPaths []string, plan []models.ChunkPlan, progressCallback func(int, int)) ([]models.ChunkMetadata, []queue.RetryJob, error) {
 	if len(chunkPaths) != len(plan) {
 		return nil, nil, fmt.Errorf("mismatch: %d chunk files but %d planned chunks", len(chunkPaths), len(plan))
 	}
+	_, noQueue := retryQueue.(queue.NoopQueue)
 
 	chunkMetadata := make([]models.ChunkMetadata, 0, len(plan))
-	var pendingPaths []string
+	var pendingJobs []queue.RetryJob
 
 	for i, chunkPath := range chunkPaths {
 		if progressCallback != nil {
@@ -42,23 +44,22 @@ func uploadChunksViaProvider(ctx context.Context, sessionID string, chunkPaths [
 
 		locationID, err := activeStorageProvider.UploadChunk(ctx, sessionID, chunkPath, filename)
 		if err != nil {
-			log.Printf("Chunk %d upload failed for session %s, enqueueing retry: %v", chunk.ChunkID, sessionID, err)
-			qerr := retryQueue.Enqueue(ctx, queue.RetryJob{
+			if noQueue {
+				for _, m := range chunkMetadata {
+					if m.DriveFileID != "" {
+						activeStorageProvider.DeleteChunk(ctx, sessionID, m.DriveFileID) // best effort
+					}
+				}
+				return nil, nil, fmt.Errorf("failed to upload chunk %d: %w (%v)", chunk.ChunkID, err, queue.ErrNotConfigured)
+			}
+			log.Printf("Chunk %d upload failed for session %s, deferring to retry queue: %v", chunk.ChunkID, sessionID, err)
+			pendingJobs = append(pendingJobs, queue.RetryJob{
 				SessionID: sessionID,
 				ChunkID:   chunk.ChunkID,
 				ChunkPath: chunkPath,
 				Target:    sessionID,
 				Filename:  filename,
 			})
-			if qerr != nil {
-				for _, m := range chunkMetadata {
-					if m.DriveFileID != "" {
-						activeStorageProvider.DeleteChunk(ctx, sessionID, m.DriveFileID) // best effort
-					}
-				}
-				return nil, nil, fmt.Errorf("failed to upload chunk %d: %w (retry enqueue: %v)", chunk.ChunkID, err, qerr)
-			}
-			pendingPaths = append(pendingPaths, chunkPath)
 		}
 
 		chunkMetadata = append(chunkMetadata, models.ChunkMetadata{
@@ -73,5 +74,5 @@ func uploadChunksViaProvider(ctx context.Context, sessionID string, chunkPaths [
 		})
 	}
 
-	return chunkMetadata, pendingPaths, nil
+	return chunkMetadata, pendingJobs, nil
 }

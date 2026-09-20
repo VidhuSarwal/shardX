@@ -1,8 +1,8 @@
 package fileprocessor
 
 import (
+	"SE/internal/metadatastore"
 	"SE/internal/models"
-	"SE/internal/store"
 	"context"
 	"errors"
 	"fmt"
@@ -72,7 +72,7 @@ func CreateUploadSession(ctx context.Context, userID primitive.ObjectID, filenam
 	}
 
 	// Check concurrent uploads
-	activeSessions, err := store.CountActiveUserSessions(ctx, userID)
+	activeSessions, err := metadatastore.Active.CountActiveUserSessions(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -96,7 +96,7 @@ func CreateUploadSession(ctx context.Context, userID primitive.ObjectID, filenam
 		ExpiresAt:        time.Now().Add(sessionExpiryDuration),
 	}
 
-	if err := store.CreateUploadSession(ctx, session); err != nil {
+	if err := metadatastore.Active.CreateUploadSession(ctx, session); err != nil {
 		return nil, err
 	}
 
@@ -104,7 +104,7 @@ func CreateUploadSession(ctx context.Context, userID primitive.ObjectID, filenam
 }
 
 func GetSession(ctx context.Context, sessionID primitive.ObjectID, userID primitive.ObjectID) (*models.UploadSession, error) {
-	session, err := store.GetUploadSession(ctx, sessionID)
+	session, err := metadatastore.Active.GetUploadSession(ctx, sessionID)
 	if err != nil {
 		return nil, err
 	}
@@ -121,21 +121,21 @@ func GetSession(ctx context.Context, sessionID primitive.ObjectID, userID primit
 }
 
 func UpdateSessionProgress(ctx context.Context, sessionID primitive.ObjectID, uploadedSize int64) error {
-	return store.UpdateSessionUploadProgress(ctx, sessionID, uploadedSize)
+	return metadatastore.Active.UpdateSessionUploadProgress(ctx, sessionID, uploadedSize)
 }
 
 func UpdateSessionStatus(ctx context.Context, sessionID primitive.ObjectID, status string, progress float64, errorMsg string) error {
-	return store.UpdateSessionStatus(ctx, sessionID, status, progress, errorMsg)
+	return metadatastore.Active.UpdateSessionStatus(ctx, sessionID, status, progress, errorMsg)
 }
 
 func CompleteSession(ctx context.Context, sessionID primitive.ObjectID) error {
 	now := time.Now()
-	return store.CompleteSession(ctx, sessionID, &now)
+	return metadatastore.Active.CompleteSession(ctx, sessionID, &now)
 }
 
 func CleanupExpiredSessions(ctx context.Context) error {
 	// Get expired sessions
-	sessions, err := store.GetExpiredSessions(ctx)
+	sessions, err := metadatastore.Active.GetExpiredSessions(ctx)
 	if err != nil {
 		return err
 	}
@@ -146,7 +146,7 @@ func CleanupExpiredSessions(ctx context.Context) error {
 			os.Remove(session.TempFilePath)
 		}
 		// Delete session from DB
-		store.DeleteUploadSession(ctx, session.ID)
+		metadatastore.Active.DeleteUploadSession(ctx, session.ID)
 	}
 
 	return nil
@@ -155,7 +155,7 @@ func CleanupExpiredSessions(ctx context.Context) error {
 func ScheduleCleanup(ctx context.Context, sessionID primitive.ObjectID) {
 	go func() {
 		time.Sleep(tempFileCleanupDuration)
-		session, err := store.GetUploadSession(ctx, sessionID)
+		session, err := metadatastore.Active.GetUploadSession(ctx, sessionID)
 		if err != nil || session == nil {
 			return
 		}

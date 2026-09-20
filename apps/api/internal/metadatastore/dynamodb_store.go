@@ -403,7 +403,9 @@ func (d *DynamoDBStore) FindUserByEmail(ctx context.Context, email string) (*mod
 
 func (d *DynamoDBStore) CreateUser(ctx context.Context, u *models.User) error {
 	u.CreatedAt = time.Now().UTC()
-	u.ID = primitive.NewObjectID()
+	if u.ID.IsZero() {
+		u.ID = primitive.NewObjectID()
+	}
 
 	item, err := attributevalue.MarshalMap(userToRecord(u))
 	if err != nil {

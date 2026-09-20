@@ -86,7 +86,9 @@ func FindUserByEmail(ctx context.Context, email string) (*models.User, error) {
 
 func CreateUser(ctx context.Context, u *models.User) error {
 	u.CreatedAt = time.Now().UTC()
-	u.ID = primitive.NewObjectID()
+	if u.ID.IsZero() {
+		u.ID = primitive.NewObjectID()
+	}
 	_, err := usersCol.InsertOne(ctx, u)
 	return err
 }

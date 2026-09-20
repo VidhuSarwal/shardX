@@ -51,3 +51,9 @@ type MetadataStore interface {
 	GetShardMetadata(ctx context.Context, sessionID string) ([]models.ShardRecord, error)
 	UpdateShardStatus(ctx context.Context, sessionID string, shardID int, status string) error
 }
+
+// Active is the process-wide MetadataStore, set by bootstrap.SelectMetadataStore.
+// Packages that predate the interface (auth, oauth, fileprocessor,
+// filehandlers) call it in place of the Mongo-only internal/store so
+// DB_PROVIDER=dynamodb actually applies to users/sessions/oauth state.
+var Active MetadataStore
