@@ -5,30 +5,16 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
-import { HardDrive, Plus, Trash2, ExternalLink, RefreshCw } from 'lucide-react';
-import { api } from '@/lib/api';
+import { HardDrive, Plus, RefreshCw } from 'lucide-react';
+import { api, type DriveAccount, type DriveSpace } from '@/lib/api';
 import { FRONTEND_BASE_URL } from '@/lib/config';
 import { isTrustedOAuthMessage } from '@/lib/oauth';
+import { formatBytes as fmt } from '@/lib/fileDetail';
 import { toast } from 'sonner';
 
-interface DriveAccount {
-  id: string;
-  provider: string;
-  display_name: string;
-  created_at: string;
-}
-
-interface DriveSpace {
-  account_id: string;
-  display_name: string;
-  owner_name?: string;
-  owner_email?: string;
-  total_space: number;
-  used_space: number;
-  free_space: number;
-  available: boolean;
-  error?: string;
-}
+// S3 mode reports free space as math.MaxInt64 (no usage accounting yet).
+const UNLIMITED = 2 ** 62;
+const formatBytes = (n: number) => (n >= UNLIMITED ? 'Unlimited' : fmt(n));
 
 const Profile = () => {
   const [accounts, setAccounts] = useState<DriveAccount[]>([]);
@@ -40,6 +26,7 @@ const Profile = () => {
   const popupPollRef = useRef<number | null>(null);
 
   const loadData = async () => {
+    setIsLoading(true);
     try {
       const [accountsData, spacesData] = await Promise.all([
         api.getDriveAccounts(),
@@ -48,7 +35,7 @@ const Profile = () => {
       setAccounts(accountsData);
       setSpaces(spacesData);
     } catch (error) {
-      toast.error('Failed to load drive accounts');
+      toast.error('Failed to load drive accounts: ' + (error instanceof Error ? error.message : 'Unknown error'));
     } finally {
       setIsLoading(false);
     }
@@ -80,11 +67,7 @@ const Profile = () => {
         const { success } = event.data;
         receivedMessageRef.current = true;
         if (success) {
-          try {
-            if (popupRef.current && !popupRef.current.closed) {
-              popupRef.current.close();
-            }
-          } catch {}
+          popupRef.current?.close();
           loadData();
           setIsLinking(false);
           toast.success('Drive account linked.');
@@ -121,36 +104,9 @@ const Profile = () => {
     }
   };
 
-  const handleRefresh = async () => {
-    setIsLoading(true);
-    await loadData();
-  };
-
-  const [isRefreshing, setIsRefreshing] = useState(false);
-
-  const handleRefreshUsage = async () => {
-    setIsRefreshing(true);
-    try {
-      await loadData();
-      toast.success('Drive usage refreshed');
-    } catch (e) {
-      toast.error('Failed to refresh drive usage');
-    } finally {
-      setIsRefreshing(false);
-    }
-  };
-
-  const formatBytes = (bytes: number) => {
-    if (bytes === 0) return '0 B';
-    const k = 1024;
-    const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return `${(bytes / Math.pow(k, i)).toFixed(2)} ${sizes[i]}`;
-  };
-
-  const totalSpace = spaces.reduce((sum, s) => sum + (typeof s.total_space === 'number' ? s.total_space : 0), 0);
-  const totalUsed = spaces.reduce((sum, s) => sum + (typeof s.used_space === 'number' ? s.used_space : 0), 0);
-  const totalFree = spaces.reduce((sum, s) => sum + (typeof s.free_space === 'number' ? s.free_space : 0), 0);
+  const totalSpace = spaces.reduce((sum, s) => sum + s.total_space, 0);
+  const totalUsed = spaces.reduce((sum, s) => sum + s.used_space, 0);
+  const totalFree = spaces.reduce((sum, s) => sum + s.free_space, 0);
 
   return (
     <ProtectedRoute>
@@ -164,7 +120,8 @@ const Profile = () => {
               </p>
             </div>
             <div className="flex gap-2">
-              <Button onClick={handleRefresh} variant="outline" disabled={isLoading}>
+              <Button onClick={loadData} variant="outline" disabled={isLoading}>
+                <RefreshCw className="w-4 h-4 mr-2" />
                 Refresh
               </Button>
               <Button onClick={handleLinkDrive} disabled={isLinking}>
@@ -208,15 +165,7 @@ const Profile = () => {
 
           {/* Connected Accounts */}
           <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-xl font-semibold">Connected Accounts</h2>
-              <div>
-                <Button variant="outline" size="sm" onClick={handleRefreshUsage} disabled={isRefreshing}>
-                  <RefreshCw className="w-4 h-4 mr-2" />
-                  {isRefreshing ? 'Refreshing...' : 'Refresh usage'}
-                </Button>
-              </div>
-            </div>
+            <h2 className="text-xl font-semibold">Connected Accounts</h2>
 
             {isLoading ? (
               <Card>
@@ -227,7 +176,7 @@ const Profile = () => {
                   </div>
                 </CardContent>
               </Card>
-            ) : accounts.length === 0 ? (
+            ) : spaces.length === 0 ? (
               <Card className="border-dashed">
                 <CardContent className="flex flex-col items-center justify-center py-12">
                   <HardDrive className="w-12 h-12 text-muted-foreground mb-3" />
@@ -243,11 +192,11 @@ const Profile = () => {
               </Card>
             ) : (
               <div className="grid gap-4 md:grid-cols-2">
-                {accounts.map((account) => {
-                  const space = spaces.find((s) => s.account_id === account.id);
+                {spaces.map((space) => {
+                  const account = accounts.find((a) => a.id === space.account_id);
 
                   return (
-                    <Card key={account.id}>
+                    <Card key={space.account_id}>
                       <CardHeader>
                         <div className="flex items-start justify-between">
                           <div className="flex items-start gap-3">
@@ -256,28 +205,18 @@ const Profile = () => {
                             </div>
                             <div>
                               <CardTitle className="text-base">
-                                {account.display_name}
+                                {space.display_name}
                               </CardTitle>
-                              <CardDescription className="text-xs">
-                                Connected {new Date(account.created_at).toLocaleDateString()}
-                              </CardDescription>
+                              {account && (
+                                <CardDescription className="text-xs">
+                                  Connected {new Date(account.created_at).toLocaleDateString()}
+                                </CardDescription>
+                              )}
                             </div>
                           </div>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            disabled
-                            className="relative"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                            <span className="absolute -top-1 -right-1 text-xs bg-warning text-warning-foreground px-1.5 py-0.5 rounded">
-                              Soon
-                            </span>
-                          </Button>
                         </div>
                       </CardHeader>
-                      {space ? (
-                        <CardContent className="space-y-3">
+                      <CardContent className="space-y-3">
                           {/* Owner details */}
                           {(space.owner_name || space.owner_email) && (
                             <div className="text-xs text-muted-foreground">
@@ -314,12 +253,7 @@ const Profile = () => {
                           {space.error && (
                             <div className="text-xs text-destructive/80">{space.error}</div>
                           )}
-                        </CardContent>
-                      ) : (
-                        <CardContent className="text-sm text-muted-foreground">
-                          No space data for this account. Try Refresh.
-                        </CardContent>
-                      )}
+                      </CardContent>
                     </Card>
                   );
                 })}
@@ -327,25 +261,6 @@ const Profile = () => {
             )}
           </div>
 
-          {/* OAuth Finished Info (show only when not loading and no accounts yet) */}
-          {!isLoading && accounts.length === 0 && (
-            <Card className="bg-muted/30">
-              <CardHeader>
-                <CardTitle className="text-base">OAuth Callback</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-muted-foreground mb-3">
-                  After authorizing Google Drive access, you'll be redirected to the OAuth completion page.
-                </p>
-                <Button variant="outline" size="sm" asChild>
-                  <a href="/oauth/finished" target="_blank">
-                    <ExternalLink className="w-4 h-4 mr-2" />
-                    View OAuth Finished Page
-                  </a>
-                </Button>
-              </CardContent>
-            </Card>
-          )}
         </div>
       </Layout>
     </ProtectedRoute>

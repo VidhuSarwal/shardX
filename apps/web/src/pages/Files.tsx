@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Layout } from '@/components/Layout';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
 import { Upload, FileText, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
-import { api } from '@/lib/api';
+import { api, ApiError, type ChunkPlan, type ChunkingStrategy } from '@/lib/api';
 import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
 
@@ -17,19 +17,14 @@ const backoff = (attempt: number) => Math.min(16000, 1000 * Math.pow(2, attempt)
 
 interface UploadSession {
   sessionId: string;
-  uploadUrl: string;
-  statusUrl?: string;
   file: File;
   uploadedBytes: number;
   status: 'uploading' | 'awaiting_strategy' | 'finalizing' | 'processing' | 'complete' | 'failed';
   progress: number;
   processingProgress?: number;
   paused?: boolean;
-  strategy?: 'greedy' | 'balanced' | 'proportional';
-  planPreview?: {
-    plan: Array<{ chunk_id: number; drive_account_id: string; size: number; start_offset: number; end_offset: number }>;
-    num_chunks: number;
-  } | null;
+  strategy: ChunkingStrategy;
+  planPreview?: { plan: ChunkPlan[]; num_chunks: number } | null;
 }
 
 const sanitizeFilename = (name: string) => name.replace(/\s+/g, '_');
@@ -47,105 +42,38 @@ const Files = () => {
   const pausedRef = useRef<Record<string, boolean>>({});
   const canceledRef = useRef<Record<string, boolean>>({});
 
-  const persistOffset = (sessionId: string, offset: number) => {
-    try {
-      localStorage.setItem(`upload_offset_${sessionId}`, String(offset));
-    } catch {}
-  };
+  const pollTimers = useRef<Record<string, ReturnType<typeof setInterval>>>({});
+  useEffect(() => () => Object.values(pollTimers.current).forEach(clearInterval), []);
 
-  const getPersistedOffset = (sessionId: string) => {
-    try {
-      const v = localStorage.getItem(`upload_offset_${sessionId}`);
-      return v ? Number(v) : 0;
-    } catch {
-      return 0;
-    }
-  };
-
-  const clearPersistedOffset = (sessionId: string) => {
-    try {
-      localStorage.removeItem(`upload_offset_${sessionId}`);
-    } catch {}
-  };
-
-  const uploadChunks = async (uploadUrl: string, sessionId: string, file: File) => {
-    let offset = getPersistedOffset(sessionId) || 0;
-    let lastConfirmed = offset;
+  const uploadChunks = async (sessionId: string, file: File) => {
+    let offset = 0;
 
     while (offset < file.size) {
-      // If canceled, stop immediately
-      if (canceledRef.current[sessionId]) {
-        toast.message('Upload canceled');
-        return false;
+      // Pause: wait until resumed or canceled.
+      while (pausedRef.current[sessionId] && !canceledRef.current[sessionId]) {
+        await new Promise((r) => setTimeout(r, 300));
       }
-      // Pause support
-      if (pausedRef.current[sessionId]) {
-        await new Promise<void>((resolve) => {
-          const id = setInterval(() => {
-            if (canceledRef.current[sessionId]) {
-              clearInterval(id);
-              resolve();
-            } else if (!pausedRef.current[sessionId]) {
-              clearInterval(id);
-              resolve();
-            }
-          }, 300);
-        });
-        if (canceledRef.current[sessionId]) {
-          toast.message('Upload canceled');
-          return false;
-        }
-      }
+      if (canceledRef.current[sessionId]) return false;
 
       const chunk = file.slice(offset, Math.min(file.size, offset + CHUNK_SIZE));
 
       let attempt = 0;
-      // retry loop for this chunk
-      // eslint-disable-next-line no-constant-condition
-      while (true) {
+      for (;;) {
         try {
-          const result = await api.uploadChunkTo(uploadUrl, chunk, offset);
-          lastConfirmed = result.uploaded;
-          offset += chunk.size; // advance only on success of this chunk
-
-          updateUpload(sessionId, {
-            uploadedBytes: result.uploaded,
-            progress: result.progress,
-          });
-          persistOffset(sessionId, lastConfirmed);
-          break; // move to next chunk
+          const result = await api.uploadChunk(sessionId, chunk, offset);
+          offset += chunk.size;
+          updateUpload(sessionId, { uploadedBytes: result.uploaded, progress: result.progress });
+          break;
         } catch (e) {
-          const err = e as Error;
-          // Unauthorized: surface error and stop (no refresh endpoint available here)
-          if (err.message.toLowerCase().includes('unauthorized') || err.message.includes('401')) {
-            updateUpload(sessionId, { status: 'failed' });
-            toast.error('Session expired. Please log in again.');
-            return false;
-          }
-
-          // Bad Request (offset/form). Try correcting offset once.
-          if (err.message.startsWith('HTTP 400')) {
-            // Reset offset to last confirmed and retry once immediately
-            offset = lastConfirmed;
-            attempt++;
-            if (attempt > 1) {
-              updateUpload(sessionId, { status: 'failed' });
-              toast.error('Upload failed due to chunk offset mismatch.');
-              return false;
-            }
+          // 4xx (expired/invalid session, bad form) won't succeed on retry; only
+          // retry network failures and 5xx.
+          const status = e instanceof ApiError ? e.status : 0;
+          if ((status === 0 || status >= 500) && attempt < MAX_RETRIES) {
+            await new Promise((r) => setTimeout(r, backoff(attempt++)));
             continue;
           }
-
-          // Retry on transient/network/server errors
-          if (attempt < MAX_RETRIES) {
-            const wait = backoff(attempt);
-            attempt++;
-            await new Promise((r) => setTimeout(r, wait));
-            continue;
-          }
-
           updateUpload(sessionId, { status: 'failed' });
-          toast.error('Upload failed: ' + (err?.message || 'Unknown error'));
+          toast.error('Upload failed: ' + (e instanceof Error ? e.message : 'Unknown error'));
           return false;
         }
       }
@@ -155,37 +83,33 @@ const Files = () => {
   };
 
   const cancelUpload = (sessionId: string) => {
-    // Mark canceled for any ongoing chunk loop
     canceledRef.current[sessionId] = true;
-    // Ensure we are not paused-waiting forever
     pausedRef.current[sessionId] = false;
-    // Clear persisted offset
-    clearPersistedOffset(sessionId);
-    // Remove from UI list
     setUploads(prev => prev.filter(u => u.sessionId !== sessionId));
     toast.info('Upload canceled. You can re-upload this file anytime.');
   };
 
-  const pollStatus = async (sessionId: string, statusUrl: string) => {
-    const interval = setInterval(async () => {
+  const pollStatus = (sessionId: string) => {
+    const stop = () => {
+      clearInterval(pollTimers.current[sessionId]);
+      delete pollTimers.current[sessionId];
+    };
+    pollTimers.current[sessionId] = setInterval(async () => {
       try {
-        const status = await api.getUploadStatusByUrl(statusUrl);
-
-        updateUpload(sessionId, {
-          status: status.status,
-          processingProgress: status.processing_progress,
-        });
+        const status = await api.getUploadStatus(sessionId);
+        updateUpload(sessionId, { status: status.status, processingProgress: status.processing_progress });
 
         if (status.status === 'complete') {
-          clearInterval(interval);
+          stop();
           toast.success('Upload complete!');
         } else if (status.status === 'failed') {
-          clearInterval(interval);
+          stop();
           toast.error('Processing failed: ' + status.error_message);
         }
-      } catch (error) {
-        clearInterval(interval);
-        toast.error('Failed to check status');
+      } catch (e) {
+        stop();
+        updateUpload(sessionId, { status: 'failed' });
+        toast.error('Failed to check status: ' + (e instanceof Error ? e.message : 'Unknown error'));
       }
     }, 3000);
   };
@@ -197,7 +121,6 @@ const Files = () => {
 
       const newUpload: UploadSession = {
         sessionId: initResult.session_id,
-        uploadUrl: initResult.upload_url,
         file,
         uploadedBytes: 0,
         status: 'uploading',
@@ -210,7 +133,7 @@ const Files = () => {
       setUploads(prev => [...prev, newUpload]);
 
       // Upload chunks
-      const success = await uploadChunks(initResult.upload_url, initResult.session_id, file);
+      const success = await uploadChunks(initResult.session_id, file);
 
       if (success) {
         // All chunks uploaded. Let user preview/select strategy before finalize.
@@ -279,39 +202,24 @@ const Files = () => {
 
   const onPreviewPlan = async (u: UploadSession) => {
     try {
-      const preview = await api.calculateChunking(u.file.size, u.strategy || 'balanced');
+      const preview = await api.calculateChunking(u.file.size, u.strategy);
       updateUpload(u.sessionId, { planPreview: preview });
     } catch (e) {
-      toast.error('Failed to calculate distribution plan');
+      toast.error('Failed to calculate distribution plan: ' + (e instanceof Error ? e.message : 'Unknown error'));
     }
   };
 
   const onFinalize = async (u: UploadSession) => {
+    updateUpload(u.sessionId, { status: 'finalizing' });
     try {
-      updateUpload(u.sessionId, { status: 'finalizing' });
-
-      const finalize = await api.finalizeUpload(u.sessionId, u.strategy || 'balanced');
-      updateUpload(u.sessionId, { statusUrl: finalize.status_url });
+      await api.finalizeUpload(u.sessionId, u.strategy);
       updateUpload(u.sessionId, { status: 'processing' });
-      pollStatus(u.sessionId, finalize.status_url);
-    } catch (e: any) {
-      // If finalize fails due to timing (400), wait a moment and retry once
-      const msg = e?.message || '';
-      if (msg.startsWith('HTTP 400')) {
-        setTimeout(async () => {
-          try {
-            const finalize = await api.finalizeUpload(u.sessionId, u.strategy || 'balanced');
-            updateUpload(u.sessionId, { statusUrl: finalize.status_url, status: 'processing' });
-            pollStatus(u.sessionId, finalize.status_url);
-          } catch (ee) {
-            updateUpload(u.sessionId, { status: 'failed' });
-            toast.error('Finalize failed. ' + (ee instanceof Error ? ee.message : 'Please retry.'));
-          }
-        }, 1500);
-      } else {
-        updateUpload(u.sessionId, { status: 'failed' });
-        toast.error('Finalize failed: ' + msg);
-      }
+      pollStatus(u.sessionId);
+    } catch (e) {
+      // Backend rejects finalize with 400 while the session is still incomplete
+      // (or expired); let the user retry rather than failing the upload.
+      updateUpload(u.sessionId, { status: 'awaiting_strategy' });
+      toast.error('Finalize failed: ' + (e instanceof Error ? e.message : 'Please retry.'));
     }
   };
 
@@ -327,10 +235,8 @@ const Files = () => {
       a.remove();
       URL.revokeObjectURL(url);
       toast.success('Key file downloaded. Store it securely.');
-    } catch (e: any) {
-      // Surface backend-provided error message when available
-      const msg = e?.message || 'Could not download key file. Please try again.';
-      toast.error(msg);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Could not download key file. Please try again.');
     }
   };
 
@@ -378,9 +284,6 @@ const Files = () => {
                   Select File
                 </label>
               </Button>
-              <p className="text-xs text-muted-foreground mt-4">
-                Maximum file size: 100 GB
-              </p>
             </CardContent>
           </Card>
 
@@ -440,10 +343,7 @@ const Files = () => {
                           <select
                             className="border rounded px-2 py-1 text-sm bg-background"
                             value={upload.strategy}
-                            onChange={(e) => {
-                              const nextStrategy = e.target.value as UploadSession['strategy'];
-                              updateUpload(upload.sessionId, { strategy: nextStrategy });
-                            }}
+                            onChange={(e) => updateUpload(upload.sessionId, { strategy: e.target.value as ChunkingStrategy })}
                           >
                             <option value="balanced">balanced</option>
                             <option value="greedy">greedy</option>

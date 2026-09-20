@@ -37,7 +37,7 @@ const Login = () => {
 
     try {
       const { token } = await api.login(email, password);
-      setAuthToken(token);
+      setAuthToken(token, email);
       toast.success('Logged in successfully');
       navigate('/files');
     } catch (error) {

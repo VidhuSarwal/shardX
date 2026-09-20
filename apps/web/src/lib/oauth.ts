@@ -9,11 +9,11 @@ export function isTrustedOAuthMessage(
   expectedOrigin: string,
 ): event is MessageEvent & { data: OAuthFinishMessage } {
   if (event.origin !== expectedOrigin) return false;
-  const data = (event as any).data;
+  const data: unknown = event.data;
   return (
-    data &&
     typeof data === 'object' &&
-    (data as any).type === 'oauth_finished' &&
-    typeof (data as any).success === 'boolean'
+    data !== null &&
+    (data as Partial<OAuthFinishMessage>).type === 'oauth_finished' &&
+    typeof (data as Partial<OAuthFinishMessage>).success === 'boolean'
   );
 }
