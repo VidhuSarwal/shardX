@@ -3,6 +3,7 @@ package main
 import (
 	"SE/internal/auth"
 	"SE/internal/authprovider"
+	"SE/internal/events"
 	"SE/internal/filehandlers"
 	"SE/internal/fileprocessor"
 	"SE/internal/handlers"
@@ -65,6 +66,7 @@ func main() {
 	metaStore := selectMetadataStore(os.Getenv("DB_PROVIDER"))
 	storageProvider := selectStorageProvider(os.Getenv("STORAGE_PROVIDER"))
 	authProv := selectAuthProvider(os.Getenv("AUTH_PROVIDER"))
+	filehandlers.InitEvents(selectEventEmitter(os.Getenv("EVENT_BUS_NAME")))
 
 	// NOTE: storageProvider and authProv are constructed here to prove the
 	// providers are selectable and usable, but most existing handlers
@@ -224,4 +226,21 @@ func selectAuthProvider(provider string) authprovider.AuthProvider {
 		log.Fatalf("AUTH_PROVIDER %q not yet implemented, coming in a later phase", provider)
 		return nil
 	}
+}
+
+// selectEventEmitter picks an events.Emitter based on the
+// EVENT_BUS_NAME env var. Unset means no event bus configured: return
+// a no-op emitter so local dev / Drive-mode runs without AWS access
+// see zero behavior change.
+func selectEventEmitter(busName string) events.Emitter {
+	if busName == "" {
+		return events.NoopEmitter{}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	e, err := events.NewEventBridgeEmitter(ctx, busName)
+	if err != nil {
+		log.Fatalf("init eventbridge emitter: %v", err)
+	}
+	return e
 }

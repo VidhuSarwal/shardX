@@ -2,6 +2,7 @@ package filehandlers
 
 import (
 	"SE/internal/drivemanager"
+	"SE/internal/events"
 	"SE/internal/fileprocessor"
 	"SE/internal/models"
 	"SE/internal/store"
@@ -17,6 +18,20 @@ import (
 
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
+
+// eventEmitter publishes domain lifecycle events (FILE_CREATED,
+// SHARD_UPLOADED, SHARD_VERIFIED, ...). Defaults to a no-op so
+// Drive/Mongo-mode deployments without EVENT_BUS_NAME configured see
+// zero behavior change. Set via InitEvents from main.go at startup.
+var eventEmitter events.Emitter = events.NoopEmitter{}
+
+// InitEvents configures the emitter used by the upload/finalize
+// pipeline. Call once at startup before serving requests.
+func InitEvents(e events.Emitter) {
+	if e != nil {
+		eventEmitter = e
+	}
+}
 
 // InitiateUploadHandler - POST /api/files/upload/initiate
 func InitiateUploadHandler(w http.ResponseWriter, r *http.Request) {
@@ -186,6 +201,17 @@ func FinalizeUploadHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	log.Printf("Starting background processing goroutine for session %s", sessionID.Hex())
+
+	eventEmitter.Emit(r.Context(), events.Event{
+		Type: events.FileCreated,
+		Detail: map[string]any{
+			"session_id": sessionID.Hex(),
+			"user_id":    userID.Hex(),
+			"filename":   session.OriginalFilename,
+			"total_size": session.TotalSize,
+			"strategy":   req.Strategy,
+		},
+	})
 
 	// Process file asynchronously
 	go processAndUploadFile(context.Background(), session, req.Strategy, req.ManualChunkSizes, userID)
@@ -370,6 +396,14 @@ func processAndUploadFile(ctx context.Context, session *models.UploadSession, st
 		progress := 70 + (20 * float64(current) / float64(total))
 		log.Printf("Upload progress for session %s: chunk %d/%d (%.1f%%)", sessionID.Hex(), current, total, progress)
 		fileprocessor.UpdateSessionStatus(ctx, sessionID, "processing", progress, fmt.Sprintf("Uploading chunk %d/%d...", current, total))
+		eventEmitter.Emit(ctx, events.Event{
+			Type: events.ShardUploaded,
+			Detail: map[string]any{
+				"session_id":  sessionID.Hex(),
+				"chunk_index": current,
+				"chunk_total": total,
+			},
+		})
 	})
 	if err != nil {
 		log.Printf("Upload failed: %v", err)
@@ -377,6 +411,13 @@ func processAndUploadFile(ctx context.Context, session *models.UploadSession, st
 		return
 	}
 	log.Printf("All chunks uploaded for session %s", sessionID.Hex())
+	eventEmitter.Emit(ctx, events.Event{
+		Type: events.ShardVerified,
+		Detail: map[string]any{
+			"session_id":  sessionID.Hex(),
+			"chunk_count": len(chunkMetadata),
+		},
+	})
 
 	// Step 6: Generate key file (95%)
 	log.Printf("Generating key file for session %s", sessionID.Hex())
