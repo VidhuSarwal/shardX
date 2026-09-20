@@ -153,6 +153,18 @@ func selectMetadataStore(provider string) metadatastore.MetadataStore {
 	switch provider {
 	case "mongo":
 		return metadatastore.NewMongoStore()
+	case "dynamodb":
+		tablePrefix := os.Getenv("DYNAMODB_TABLE_PREFIX")
+		if tablePrefix == "" {
+			log.Fatalf("DB_PROVIDER=dynamodb requires DYNAMODB_TABLE_PREFIX")
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		s, err := metadatastore.NewDynamoDBStore(ctx, tablePrefix)
+		if err != nil {
+			log.Fatalf("init dynamodb store: %v", err)
+		}
+		return s
 	default:
 		log.Fatalf("DB_PROVIDER %q not yet implemented, coming in a later phase", provider)
 		return nil
@@ -168,6 +180,17 @@ func selectStorageProvider(provider string) storage.StorageProvider {
 	switch provider {
 	case "drive":
 		return storage.NewDriveProvider()
+	case "s3":
+		bucket := os.Getenv("S3_BUCKET")
+		kmsKeyID := os.Getenv("S3_KMS_KEY_ID")
+		if bucket == "" || kmsKeyID == "" {
+			log.Fatalf("STORAGE_PROVIDER=s3 requires S3_BUCKET and S3_KMS_KEY_ID env vars to be set")
+		}
+		p, err := storage.NewS3Provider(context.Background(), bucket, kmsKeyID)
+		if err != nil {
+			log.Fatalf("init s3 storage provider: %v", err)
+		}
+		return p
 	default:
 		log.Fatalf("STORAGE_PROVIDER %q not yet implemented, coming in a later phase", provider)
 		return nil
