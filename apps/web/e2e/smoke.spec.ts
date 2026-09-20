@@ -13,12 +13,12 @@ test('reduced motion still shows headlines immediately', async ({ browser }) => 
   const ctx = await browser.newContext({ reducedMotion: 'reduce' });
   const page = await ctx.newPage();
   await page.goto('/');
-  await expect(page.locator('#store h2')).toHaveText(/S3, under your KMS key/);
+  await expect(page.locator('#store h2')).toHaveText(/S3,\s+under\s+your\s+KMS\s+key/);
 });
 
 test('guide TOC navigates', async ({ page }) => {
   await page.goto('/guide');
-  await page.getByRole('link', { name: /Key File/ }).first().click();
+  await page.getByRole('link', { name: /key file/i }).first().click();
   await expect(page).toHaveURL(/#/);
   await expect(page.locator('section#keyfile h2')).toBeVisible();
 });
