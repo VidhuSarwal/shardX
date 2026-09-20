@@ -1,4 +1,4 @@
-import { useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { progressStore } from './store';
@@ -71,6 +71,10 @@ export const NoiseField = ({ count, reduced }: { count: number; reduced: boolean
   const dpr = useThree((s) => s.viewport.dpr);
   const lastChapter = useRef(-1);
   const tmpB = useMemo(() => new THREE.Color(), []);
+  useEffect(() => {
+    lastChapter.current = -1; // geometry was rebuilt: re-copy targets on next frame
+    return () => { geo.dispose(); mat.dispose(); };
+  }, [geo, mat]);
 
   useFrame((_, dt) => {
     const { chapter, t } = progressStore;
