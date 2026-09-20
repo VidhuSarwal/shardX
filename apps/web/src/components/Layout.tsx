@@ -1,8 +1,8 @@
-import { ReactNode, useMemo } from 'react';
+import { ReactNode } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
-import { Cloud, Files, User, LogOut, Download as DownloadIcon } from 'lucide-react';
+import { Cloud, Files, User, LogOut } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import {
@@ -13,8 +13,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { getAuthToken } from '@/lib/api';
-import { decodeJwtPayload, getInitialsFromName } from '@/lib/utils';
+import { getAuthEmail } from '@/lib/api';
+import { getInitialsFromName } from '@/lib/utils';
 
 interface LayoutProps {
   children: ReactNode;
@@ -24,14 +24,8 @@ export const Layout = ({ children }: LayoutProps) => {
   const { isAuthenticated, logout } = useAuth();
   const location = useLocation();
 
-  // Try to derive basic account info from JWT (email/subject)
-  const accountEmail = useMemo(() => {
-    const token = getAuthToken();
-    if (!token) return null;
-    const payload = decodeJwtPayload<Record<string, unknown>>(token);
-    const email = (payload?.['email'] as string) || (payload?.['sub'] as string) || (payload?.['username'] as string);
-    return email ?? null;
-  }, [location.pathname]);
+  // The backend JWT only carries the user's ObjectID, so the email is remembered at login.
+  const accountEmail = getAuthEmail();
 
   const isActive = (path: string) => location.pathname === path;
 
@@ -57,17 +51,6 @@ export const Layout = ({ children }: LayoutProps) => {
                   <Link to="/files">
                     <Files className="w-4 h-4 mr-2" />
                     Files
-                  </Link>
-                </Button>
-
-                <Button
-                  variant={isActive('/download') ? 'default' : 'ghost'}
-                  asChild
-                  size="sm"
-                >
-                  <Link to="/download">
-                    <DownloadIcon className="w-4 h-4 mr-2" />
-                    Download
                   </Link>
                 </Button>
 
