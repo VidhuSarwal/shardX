@@ -1,0 +1,170 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "StepFunctions",
+      "Effect": "Allow",
+      "Action": [
+        "states:CreateStateMachine",
+        "states:DeleteStateMachine",
+        "states:DescribeStateMachine",
+        "states:UpdateStateMachine",
+        "states:ListStateMachineVersions",
+        "states:TagResource",
+        "states:ListTagsForResource",
+        "states:StartExecution",
+        "states:DescribeExecution",
+        "states:ListExecutions"
+      ],
+      "Resource": [
+        "arn:aws:states:us-east-1:694282668761:stateMachine:shardx-*",
+        "arn:aws:states:us-east-1:694282668761:execution:shardx-*:*"
+      ]
+    },
+    {
+      "Sid": "SQS",
+      "Effect": "Allow",
+      "Action": [
+        "sqs:CreateQueue",
+        "sqs:DeleteQueue",
+        "sqs:GetQueueAttributes",
+        "sqs:SetQueueAttributes",
+        "sqs:GetQueueUrl",
+        "sqs:TagQueue",
+        "sqs:ListQueueTags",
+        "sqs:SendMessage",
+        "sqs:ReceiveMessage",
+        "sqs:DeleteMessage"
+      ],
+      "Resource": "arn:aws:sqs:us-east-1:694282668761:shardx-*"
+    },
+    {
+      "Sid": "EventBridge",
+      "Effect": "Allow",
+      "Action": [
+        "events:CreateEventBus",
+        "events:DeleteEventBus",
+        "events:DescribeEventBus",
+        "events:PutEvents",
+        "events:TagResource",
+        "events:ListTagsForResource",
+        "events:PutRule",
+        "events:DeleteRule",
+        "events:DescribeRule",
+        "events:ListTargetsByRule",
+        "events:PutTargets",
+        "events:RemoveTargets"
+      ],
+      "Resource": [
+        "arn:aws:events:us-east-1:694282668761:event-bus/shardx-*",
+        "arn:aws:events:us-east-1:694282668761:rule/shardx-*",
+        "arn:aws:events:us-east-1:694282668761:rule/shardx-*/*"
+      ]
+    },
+    {
+      "Sid": "AccountLevelReads",
+      "Effect": "Allow",
+      "Action": [
+        "logs:DescribeLogGroups",
+        "logs:PutResourcePolicy",
+        "logs:DeleteResourcePolicy",
+        "logs:DescribeResourcePolicies",
+        "cloudtrail:DescribeTrails",
+        "states:ValidateStateMachineDefinition"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "LogGroups",
+      "Effect": "Allow",
+      "Action": [
+        "logs:CreateLogGroup",
+        "logs:DeleteLogGroup",
+        "logs:PutRetentionPolicy",
+        "logs:DeleteRetentionPolicy",
+        "logs:TagResource",
+        "logs:ListTagsForResource",
+        "logs:TagLogGroup",
+        "logs:ListTagsLogGroup"
+      ],
+      "Resource": "arn:aws:logs:us-east-1:694282668761:log-group:/shardx/*"
+    },
+    {
+      "Sid": "CloudWatchAlarms",
+      "Effect": "Allow",
+      "Action": [
+        "cloudwatch:DescribeAlarms",
+        "cloudwatch:PutMetricAlarm",
+        "cloudwatch:DeleteAlarms",
+        "cloudwatch:TagResource",
+        "cloudwatch:ListTagsForResource"
+      ],
+      "Resource": "arn:aws:cloudwatch:us-east-1:694282668761:alarm:shardx-*"
+    },
+    {
+      "Sid": "CloudTrail",
+      "Effect": "Allow",
+      "Action": [
+        "cloudtrail:CreateTrail",
+        "cloudtrail:DeleteTrail",
+        "cloudtrail:GetTrail",
+        "cloudtrail:GetTrailStatus",
+        "cloudtrail:UpdateTrail",
+        "cloudtrail:StartLogging",
+        "cloudtrail:StopLogging",
+        "cloudtrail:AddTags",
+        "cloudtrail:ListTags",
+        "cloudtrail:GetEventSelectors",
+        "cloudtrail:PutEventSelectors",
+        "cloudtrail:GetInsightSelectors"
+      ],
+      "Resource": "arn:aws:cloudtrail:us-east-1:694282668761:trail/shardx-*"
+    },
+    {
+      "Sid": "SNS",
+      "Effect": "Allow",
+      "Action": [
+        "sns:CreateTopic",
+        "sns:DeleteTopic",
+        "sns:GetTopicAttributes",
+        "sns:SetTopicAttributes",
+        "sns:Subscribe",
+        "sns:Unsubscribe",
+        "sns:GetSubscriptionAttributes",
+        "sns:ListSubscriptionsByTopic",
+        "sns:TagResource",
+        "sns:ListTagsForResource"
+      ],
+      "Resource": "arn:aws:sns:us-east-1:694282668761:shardx-*"
+    },
+    {
+      "Sid": "Budgets",
+      "Effect": "Allow",
+      "Action": [
+        "budgets:ViewBudget",
+        "budgets:ModifyBudget",
+        "budgets:TagResource",
+        "budgets:ListTagsForResource"
+      ],
+      "Resource": "arn:aws:budgets::694282668761:budget/shardx-*"
+    },
+    {
+      "Sid": "OpenSearch",
+      "Effect": "Allow",
+      "Action": [
+        "es:CreateDomain",
+        "es:DeleteDomain",
+        "es:DescribeDomain",
+        "es:DescribeDomainConfig",
+        "es:UpdateDomainConfig",
+        "es:AddTags",
+        "es:ListTags",
+        "es:ESHttp*"
+      ],
+      "Resource": [
+        "arn:aws:es:us-east-1:694282668761:domain/shardx-*",
+        "arn:aws:es:us-east-1:694282668761:domain/shardx-*/*"
+      ]
+    }
+  ]
+}

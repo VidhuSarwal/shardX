@@ -1,4 +1,14 @@
 /lnd2
 .env
 .env.local
-.env.*.local*.log
+.env.*.local
+*.log
+
+# Terraform local state and secrets
+*.tfstate
+*.tfstate.*
+.terraform/
+*.tfvars
+!*.tfvars.example
+
+.DS_Store

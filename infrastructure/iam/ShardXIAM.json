@@ -19,13 +19,13 @@
         "iam:TagRole",
         "iam:UntagRole"
       ],
-      "Resource": "arn:aws:iam::ACCOUNT_ID:role/shardx-*"
+      "Resource": "arn:aws:iam::694282668761:role/shardx-*"
     },
     {
       "Sid": "PassProjectRolesToServices",
       "Effect": "Allow",
       "Action": "iam:PassRole",
-      "Resource": "arn:aws:iam::ACCOUNT_ID:role/shardx-*",
+      "Resource": "arn:aws:iam::694282668761:role/shardx-*",
       "Condition": {
         "StringEquals": {
           "iam:PassedToService": [
@@ -40,7 +40,7 @@
       "Sid": "OpenSearchServiceLinkedRole",
       "Effect": "Allow",
       "Action": "iam:CreateServiceLinkedRole",
-      "Resource": "arn:aws:iam::ACCOUNT_ID:role/aws-service-role/opensearchservice.amazonaws.com/*",
+      "Resource": "arn:aws:iam::694282668761:role/aws-service-role/opensearchservice.amazonaws.com/*",
       "Condition": {
         "StringEquals": {
           "iam:AWSServiceName": "opensearchservice.amazonaws.com"
