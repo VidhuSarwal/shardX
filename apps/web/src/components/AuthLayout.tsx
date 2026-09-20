@@ -1,4 +1,4 @@
-import { lazy, Suspense, type ReactNode } from 'react';
+import { lazy, Suspense, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { GlowCard, SplitText } from '@/components/ds';
 import { useWebGL } from '@/hooks/useWebGL';
@@ -13,7 +13,7 @@ const CLAIMS = [
 
 export const AuthLayout = ({ title, subtitle, children, footer }: { title: string; subtitle: string; children: ReactNode; footer: ReactNode }) => {
   const webgl = useWebGL();
-  const claim = CLAIMS[Math.floor(Date.now() / 10000) % CLAIMS.length];
+  const [claim] = useState(() => CLAIMS[Math.floor(Date.now() / 10000) % CLAIMS.length]);
   return (
     <div className="min-h-screen lg:grid lg:grid-cols-2">
       <aside className="relative h-[30vh] lg:h-auto overflow-hidden bg-gradient-to-br from-background via-[hsl(228_20%_6%)] to-[hsl(275_40%_8%)]">

@@ -11,7 +11,8 @@ export const Reveal = ({ children, delay = 0, className, as = 'div' }: { childre
   const reduced = useReducedMotion();
   useGSAP(() => {
     if (reduced || !ref.current) return;
-    gsap.fromTo(ref.current, { opacity: 0, y: 24 }, { opacity: 1, y: 0, duration: 0.9, delay, ease: 'power3.out', scrollTrigger: { trigger: ref.current, start: 'top 85%', once: true } });
+    gsap.set(ref.current, { opacity: 0, y: 24 });
+    gsap.to(ref.current, { opacity: 1, y: 0, duration: 0.9, delay, ease: 'power3.out', scrollTrigger: { trigger: ref.current, start: 'top 85%', once: true } });
   }, { dependencies: [reduced] });
-  return createElement(as as string, { ref, className, style: reduced ? undefined : { opacity: 0 } }, children);
+  return createElement(as as string, { ref, className }, children);
 };
