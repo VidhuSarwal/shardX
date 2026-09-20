@@ -201,7 +201,7 @@ func (p *CognitoProvider) Signup(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if isInvalidPasswordErr(err) {
-			http.Error(w, "password does not meet requirements", http.StatusBadRequest)
+			http.Error(w, "password must be at least 12 characters with upper, lower, number and symbol", http.StatusBadRequest)
 			return
 		}
 		http.Error(w, "create user failed", http.StatusInternalServerError)

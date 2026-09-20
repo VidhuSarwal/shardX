@@ -117,6 +117,9 @@ func main() {
 	if p := os.Getenv("PORT"); p != "" {
 		addr = ":" + p
 	}
+	if p := os.Getenv("PORT"); p != "" {
+		addr = ":" + p
+	}
 	fmt.Printf("Starting server on %s\n", addr)
 	// Apply middlewares: CORS (allow all for now) then Logger
 	handler := middleware.CORS([]string{"*"})(mux)
