@@ -6,12 +6,16 @@ import type { TourAction, TourState, TourStep } from '@/lib/tour';
 
 const PAD = 8;
 
+/** First-listed selector wins (unlike querySelector's document-order semantics for lists). */
+const findTarget = (selector: string): Element | null =>
+  selector.split(',').map((s) => document.querySelector(s.trim())).find(Boolean) ?? null;
+
 export const Tour = ({ steps, state, dispatch }: { steps: TourStep[]; state: TourState; dispatch: Dispatch<TourAction> }) => {
   const spot = useRef<HTMLDivElement>(null);
   const card = useRef<HTMLDivElement>(null);
   const reduced = useReducedMotion();
   const [rect, setRect] = useState<DOMRect | null>(null);
-  const available = steps.map((s) => !!document.querySelector(s.selector));
+  const available = steps.map((s) => !!findTarget(s.selector));
   const step = steps[state.index];
   const restoreFocus = useRef<Element | null>(null);
 
@@ -20,7 +24,7 @@ export const Tour = ({ steps, state, dispatch }: { steps: TourStep[]; state: Tou
   // value would be stale without state.open/state.index in the dep array.
   useEffect(() => {
     if (!state.open) return;
-    const avail = steps.map((s) => !!document.querySelector(s.selector));
+    const avail = steps.map((s) => !!findTarget(s.selector));
     if (!avail[state.index]) dispatch({ type: 'next', available: avail });
   }, [state.open, state.index, steps, dispatch]);
 
@@ -36,7 +40,7 @@ export const Tour = ({ steps, state, dispatch }: { steps: TourStep[]; state: Tou
 
   useLayoutEffect(() => {
     if (!state.open) return;
-    const el = document.querySelector(step.selector);
+    const el = findTarget(step.selector);
     if (!el) return;
     el.scrollIntoView({ block: 'center', behavior: reduced ? 'auto' : 'smooth' });
     const measure = () => setRect(el.getBoundingClientRect());
