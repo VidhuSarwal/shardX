@@ -26,7 +26,7 @@ The system follows a classic **client-server decoupling** model, with a Go-based
 
 ### High-Level System Architecture
 ```text
-[ shardx_frontend ] <---(REST API / JWT)---> [ shardx_backend ]
+[ apps/web ] <---(REST API / JWT)---> [ apps/api ]
       |                                              |
       |                                      [ MongoDB (User/Sessions) ]
       |                                              |
@@ -67,7 +67,7 @@ A typical file upload and distribution request follows these steps:
 
 ---
 
-## 4. ⚙️ Backend Deep Dive (shardx_backend)
+## 4. ⚙️ Backend Deep Dive (apps/api)
 
 ### Tech Stack
 - **Language**: Go 1.24.0
@@ -93,7 +93,7 @@ The `obfuscator.go` uses a **ChaCha20 stream cipher** as a Deterministic Random 
 
 ---
 
-## 5. 🎨 Frontend Deep Dive (shardx_frontend)
+## 5. 🎨 Frontend Deep Dive (apps/web)
 
 ### Tech Stack
 - **Framework**: React 18 + Vite
@@ -179,14 +179,14 @@ The frontend communicates with the backend via JSON over HTTP.
 - Google Cloud Console Project (for OAuth credentials)
 
 ### Backend Setup
-1.  Navigate to `shardx_backend/`.
+1.  Navigate to `apps/api/`.
 2.  Copy `.env.example` to `.env` and fill in:
     - `MONGO_URI`, `JWT_SECRET`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`.
 3.  Run: `go mod tidy`.
 4.  Launch: `go run cmd/server/main.go`. (Starts on port 5555).
 
 ### Frontend Setup
-1.  Navigate to `shardx_frontend/`.
+1.  Navigate to `apps/web/`.
 2.  Run: `npm install`.
 3.  Launch: `npm run dev`. (Starts via Vite, usually port 5173).
 
@@ -219,7 +219,7 @@ The frontend communicates with the backend via JSON over HTTP.
 
 ## 11. 🧪 Testing & Quality
 
-- **Route Testing**: `shardx_backend/test_routes.sh` contains a structured suite of `curl` commands to verify the end-to-end API logic.
+- **Route Testing**: `apps/api/test_routes.sh` contains a structured suite of `curl` commands to verify the end-to-end API logic.
 - **Linting**: 
     - Frontend: ESLint configuration present.
     - Backend: Go standard formatting.

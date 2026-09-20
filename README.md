@@ -51,7 +51,7 @@ Reconstruct ← Strip noise ← Fetch fragments ← Provide .2xpfm.key file
 | Frontend | React 18, TypeScript, Vite |
 | Styling | Tailwind CSS, shadcn/ui |
 | Cryptography | ChaCha20-DRBG, AES-256-GCM, Bcrypt |
-| Cloud | Google Drive API v3 |
+| Cloud | Google Drive API v3 · optional AWS mode: S3 + KMS, DynamoDB, Cognito, SQS, EventBridge, Step Functions (Terraform in `infrastructure/`) |
 
 ---
 
@@ -67,7 +67,7 @@ Reconstruct ← Strip noise ← Fetch fragments ← Provide .2xpfm.key file
 ### Backend
 
 ```bash
-cd shardx_backend
+cd apps/api
 cp .env.example .env
 # Fill in: MONGO_URI, JWT_SECRET, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET
 go mod tidy
@@ -78,7 +78,7 @@ go run cmd/server/main.go
 ### Frontend
 
 ```bash
-cd shardx_frontend
+cd apps/web
 npm install
 npm run dev
 # Runs on :5173
@@ -90,16 +90,23 @@ npm run dev
 
 ```
 shardx/
-├── shardx_backend/
-│   ├── cmd/server/             # Entry point
-│   └── internal/
-│       ├── auth/               # JWT, login, signup
-│       ├── fileprocessor/      # Obfuscation, chunking, key file generation
-│       ├── oauth/              # Google OAuth2 flow
-│       └── store/              # MongoDB repository layer
-├── shardx_frontend/
-│   └── src/                   # React app
-└── README.md
+├── apps/
+│   ├── api/                        # Go backend
+│   │   ├── cmd/server/             # HTTP API entry point
+│   │   ├── cmd/shardworker/        # SQS retry worker (S3 mode)
+│   │   └── internal/
+│   │       ├── auth/, oauth/       # JWT + Google OAuth2
+│   │       ├── fileprocessor/      # Obfuscation, chunking, key file
+│   │       ├── store/              # MongoDB repository layer
+│   │       ├── storage/            # StorageProvider: drive | s3
+│   │       ├── metadatastore/      # MetadataStore: mongo | dynamodb
+│   │       ├── authprovider/       # AuthProvider: custom | cognito
+│   │       ├── events/, orchestration/, queue/, worker/, integrity/
+│   │       └── bootstrap/          # env → provider wiring
+│   └── web/                        # React app (Vite + shadcn/ui)
+├── infrastructure/terraform/       # AWS Phase 1 IaC (+ standalone search/)
+├── docs/                           # PLAN.md, TODO.md, ARCHITECTURE.md
+└── UPDATE.md                       # What changed from Vcrypt
 ```
 
 ---
@@ -154,7 +161,7 @@ The `.2xpfm.key` file is a JSON document that stays with you. It contains the ob
 - [ ] Browser-side obfuscation via WebAssembly
 - [ ] OneDrive support
 - [ ] Dropbox support
-- [ ] S3 support
+- [x] S3 support (`STORAGE_PROVIDER=s3`, see `docs/ARCHITECTURE.md`)
 
 ---
 
@@ -164,7 +171,7 @@ PRs are welcome. For significant changes, open an issue first to discuss what yo
 
 ```bash
 # Run API test suite
-cd shardx_backend
+cd apps/api
 bash test_routes.sh
 ```
 

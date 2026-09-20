@@ -9,16 +9,15 @@ context. Treat this as the source of truth over memory/chat history.
 
 1. Read `docs/PLAN.md` for the full context/architecture decisions.
 2. Read the checklist below — anything not `[x]` is remaining work.
-3. `cd shardx_backend && go build ./... && go vet ./... && go test ./...`
+3. `cd apps/api && go build ./... && go vet ./... && go test ./...`
    should always be clean on `main`. If it isn't, something got merged
    wrong — fix that before adding new work.
 4. If Docker is available, LocalStack-gated integration tests exist for
    S3/DynamoDB (`LOCALSTACK=1 go test ./...`) — see
-   `shardx_backend/docker-compose.localstack.yml`. Always `docker compose
+   `apps/api/docker-compose.localstack.yml`. Always `docker compose
    down` when finished so nothing idles on the machine.
-5. Commits so far are authored solely as `vidhu <vidhusarwal@hotmail.com>`
-   — no co-author trailers. Keep committing after each discrete unit of
-   work, not in one giant batch at the end.
+5. Keep committing after each discrete unit of work, not in one giant
+   batch at the end.
 6. AWS credentials are intentionally **not** wired up yet — the user
    wants to hand those over only at the very end, right before Terraform
    actually gets applied / before live Cognito-pool testing. Don't block
@@ -54,19 +53,19 @@ context. Treat this as the source of truth over memory/chat history.
 
 ### Group 4 — Frontend ✅ done
 - [x] Backend: `GET /api/files/{session_id}/shards` and `/timeline` added next to `/health` (timeline is derived from the persisted session + shard records — no separate event store)
-- [x] API client additions in `shardx_frontend/src/lib/api.ts` (`getFileHealth`, `getFileShards`, `getFileTimeline` + types)
+- [x] API client additions in `apps/web/src/lib/api.ts` (`getFileHealth`, `getFileShards`, `getFileTimeline` + types)
 - [x] Shard Map component (`src/components/ShardMap.tsx`)
 - [x] File Health card (`src/components/FileHealthCard.tsx`)
 - [x] Audit Timeline view (`src/components/AuditTimeline.tsx`)
 - [x] `/files/:sessionId` page (`src/pages/FileDetail.tsx`), linked from completed uploads; polls while shards are `pending`
 - [x] Vitest tests for the render-free logic in `src/lib/fileDetail.ts` (`src/lib/__tests__/fileDetail.test.ts`), same pattern as `oauth.test.ts`
 
-### Group 5 — Repo restructuring & docs (partially started)
+### Group 5 — Repo restructuring & docs ✅ done
 - [x] `docs/PLAN.md` (this migration's plan, copied from the planning session)
 - [x] `docs/TODO.md` (this file)
-- [ ] Move `shardx_backend/` → `apps/api/`, `shardx_frontend/` → `apps/web/` (light touch, per plan §Group 5 — do this LAST, after everything else is stable, since it touches every path/script)
-- [ ] `docs/ARCHITECTURE.md` describing what was actually built (not the full original spec)
-- [ ] `UPDATE.md` summarizing Vcrypt → ShardX changes
+- [x] Move `shardx_backend/` → `apps/api/`, `shardx_frontend/` → `apps/web/` (`git mv`; README/PROJECT_DEEP_DIVE/TODO paths updated; no script had a hardcoded cross-dir path)
+- [x] `docs/ARCHITECTURE.md` describing what was actually built
+- [x] `UPDATE.md` summarizing Vcrypt → ShardX changes
 
 ## Known gaps / honest limitations to carry forward
 
