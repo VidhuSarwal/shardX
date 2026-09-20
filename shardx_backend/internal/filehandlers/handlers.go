@@ -4,6 +4,8 @@ import (
 	"SE/internal/drivemanager"
 	"SE/internal/events"
 	"SE/internal/fileprocessor"
+	"SE/internal/integrity"
+	"SE/internal/metadatastore"
 	"SE/internal/models"
 	"SE/internal/orchestration"
 	"SE/internal/store"
@@ -16,6 +18,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"time"
 
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
@@ -46,6 +49,25 @@ var orchestrator orchestration.Orchestrator = orchestration.NoopOrchestrator{}
 func InitOrchestrator(o orchestration.Orchestrator) {
 	if o != nil {
 		orchestrator = o
+	}
+}
+
+// metaStore is the MetadataStore used to persist per-shard integrity
+// records (Integrity Engine) and to serve the health-check handler.
+// Defaults to nil so a handler/pipeline that never had InitMetadataStore
+// called (e.g. some existing tests) sees no behavior change: shard
+// metadata simply isn't persisted, and the health handler reports an error
+// rather than panicking on a nil interface. Set via InitMetadataStore from
+// main.go at startup.
+var metaStore metadatastore.MetadataStore
+
+// InitMetadataStore configures the MetadataStore used by the upload
+// pipeline (to persist shard integrity records) and by the health-check
+// handler (to read them back). Call once at startup before serving
+// requests.
+func InitMetadataStore(m metadatastore.MetadataStore) {
+	if m != nil {
+		metaStore = m
 	}
 }
 
@@ -332,6 +354,28 @@ func CalculateChunkingHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// chunkMetadataToShardRecords converts the ChunkMetadata produced by the
+// upload pipeline (drivemanager.UploadChunksToDrivers, which already
+// computes each chunk's SHA256 checksum via calculateFileChecksum) into the
+// ShardRecord shape persisted by the Integrity Engine. Status is set to
+// "verified" because reaching this point means the chunk was successfully
+// uploaded and its checksum was computed against the uploaded bytes.
+func chunkMetadataToShardRecords(chunks []models.ChunkMetadata) []models.ShardRecord {
+	now := time.Now().UTC()
+	records := make([]models.ShardRecord, 0, len(chunks))
+	for _, c := range chunks {
+		records = append(records, models.ShardRecord{
+			ShardID:   c.ChunkID,
+			SHA256:    c.Checksum,
+			Size:      c.Size,
+			Bucket:    c.DriveAccountID, // "target" in StorageProvider terms; drive account ID in Drive mode
+			CreatedAt: now,
+			Status:    integrity.StatusVerified,
+		})
+	}
+	return records
+}
+
 // processAndUploadFile handles the entire processing pipeline
 func processAndUploadFile(ctx context.Context, session *models.UploadSession, strategy models.ChunkingStrategy, manualSizes []int64, userID primitive.ObjectID) {
 	sessionID := session.ID
@@ -457,6 +501,18 @@ func processAndUploadFile(ctx context.Context, session *models.UploadSession, st
 			"chunk_count": len(chunkMetadata),
 		},
 	})
+
+	// Persist per-shard integrity metadata (Integrity Engine) so a health
+	// check can later be served without needing the user's key file. A
+	// persistence failure here must not fail an otherwise-good upload: log
+	// and continue, same tolerance already given to UpdateSessionKeyFile
+	// errors below and to eventEmitter failures.
+	if metaStore != nil {
+		shardRecords := chunkMetadataToShardRecords(chunkMetadata)
+		if err := metaStore.SaveShardMetadata(ctx, sessionID.Hex(), shardRecords); err != nil {
+			log.Printf("Failed to save shard metadata for session %s: %v", sessionID.Hex(), err)
+		}
+	}
 
 	// Step 6: Generate key file (95%)
 	log.Printf("Generating key file for session %s", sessionID.Hex())

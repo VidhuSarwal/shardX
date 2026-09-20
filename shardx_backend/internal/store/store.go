@@ -14,10 +14,11 @@ import (
 )
 
 var (
-	mongoClient *mongo.Client
-	db          *mongo.Database
-	usersCol    *mongo.Collection
-	stateCol    *mongo.Collection
+	mongoClient      *mongo.Client
+	db               *mongo.Database
+	usersCol         *mongo.Collection
+	stateCol         *mongo.Collection
+	shardMetadataCol *mongo.Collection
 )
 
 func InitStore(ctx context.Context) error {
@@ -37,6 +38,15 @@ func InitStore(ctx context.Context) error {
 
 	// Initialize sessions collection
 	initSessionsCollection(ctx)
+
+	// Initialize shard metadata collection
+	shardMetadataCol = db.Collection("shard_metadata")
+	_, err = shardMetadataCol.Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys: bson.M{"file_id": 1},
+	})
+	if err != nil {
+		return err
+	}
 
 	// Create TTL index for oauth states
 	_, err = stateCol.Indexes().CreateOne(ctx, mongo.IndexModel{
@@ -260,4 +270,44 @@ func UpdateSessionKeyFile(ctx context.Context, sessionID primitive.ObjectID, key
 		bson.M{"$set": bson.M{"key_file_path": keyFilePath}},
 	)
 	return err
+}
+
+// Shard Metadata Management (Integrity Engine)
+
+// SaveShardMetadata persists per-shard integrity records for a session so
+// they can be queried later (e.g. by a health check) without needing the
+// user's downloadable key file. sessionID is stored as each record's
+// FileID (hex string) since this system has no separate file identifier.
+func SaveShardMetadata(ctx context.Context, sessionID string, shards []models.ShardRecord) error {
+	if shardMetadataCol == nil {
+		return errors.New("shard metadata collection not initialized")
+	}
+	if len(shards) == 0 {
+		return nil
+	}
+	docs := make([]interface{}, 0, len(shards))
+	for _, s := range shards {
+		s.FileID = sessionID
+		docs = append(docs, s)
+	}
+	_, err := shardMetadataCol.InsertMany(ctx, docs)
+	return err
+}
+
+// GetShardMetadata returns all persisted shard records for a session.
+func GetShardMetadata(ctx context.Context, sessionID string) ([]models.ShardRecord, error) {
+	if shardMetadataCol == nil {
+		return nil, errors.New("shard metadata collection not initialized")
+	}
+	cursor, err := shardMetadataCol.Find(ctx, bson.M{"file_id": sessionID})
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	shards := make([]models.ShardRecord, 0)
+	if err := cursor.All(ctx, &shards); err != nil {
+		return nil, err
+	}
+	return shards, nil
 }

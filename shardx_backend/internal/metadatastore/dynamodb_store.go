@@ -56,6 +56,18 @@
 //     modify-write races for AddDriveAccountToUser. This is invisible to
 //     callers through the MetadataStore interface.
 //
+//   {prefix}-shard-metadata
+//     PK: file_id (S)            -- the upload session ID (hex string),
+//                                   reused as the "file id" since this
+//                                   system has no separate file identifier.
+//     SK: shard_id (N)           -- the chunk/shard index within the file.
+//       A single partition key alone cannot hold N shard rows per file (each
+//       PutItem would overwrite the previous one) so this table uses a
+//       composite primary key (PK+SK), matching the natural
+//       "every shard has a record" access pattern: GetShardMetadata does a
+//       Query on file_id and gets all shard rows back in one call; no GSI is
+//       needed since the only read path is "all shards for a file".
+//
 // ID format decision: the MetadataStore interface signatures are hard-fixed
 // to primitive.ObjectID (from go.mongodb.org/mongo-driver/bson/primitive),
 // inherited unchanged from internal/store. A UUID string cannot satisfy
@@ -131,6 +143,7 @@ type DynamoDBStore struct {
 	oauthStatesTable    string
 	uploadSessionsTable string
 	driveAccountsTable  string
+	shardMetadataTable  string
 }
 
 // compile-time interface compliance assertion
@@ -152,6 +165,7 @@ func NewDynamoDBStore(ctx context.Context, tablePrefix string) (*DynamoDBStore, 
 		oauthStatesTable:    tablePrefix + "-oauth-states",
 		uploadSessionsTable: tablePrefix + "-upload-sessions",
 		driveAccountsTable:  tablePrefix + "-drive-accounts",
+		shardMetadataTable:  tablePrefix + "-shard-metadata",
 	}, nil
 }
 
@@ -163,6 +177,7 @@ func newDynamoDBStoreWithClient(client dynamoDBAPI, tablePrefix string) *DynamoD
 		oauthStatesTable:    tablePrefix + "-oauth-states",
 		uploadSessionsTable: tablePrefix + "-upload-sessions",
 		driveAccountsTable:  tablePrefix + "-drive-accounts",
+		shardMetadataTable:  tablePrefix + "-shard-metadata",
 	}
 }
 
@@ -275,6 +290,43 @@ func recordToDriveAccount(r driveAccountRecord) (*models.DriveAccount, error) {
 		EncryptedToken: r.EncryptedToken,
 		CreatedAt:      r.CreatedAt,
 	}, nil
+}
+
+type shardMetadataRecord struct {
+	FileID    string    `dynamodbav:"file_id"`
+	ShardID   int       `dynamodbav:"shard_id"`
+	SHA256    string    `dynamodbav:"sha256"`
+	Size      int64     `dynamodbav:"size"`
+	Bucket    string    `dynamodbav:"bucket,omitempty"`
+	Region    string    `dynamodbav:"region,omitempty"`
+	CreatedAt time.Time `dynamodbav:"created_at"`
+	Status    string    `dynamodbav:"status"`
+}
+
+func shardRecordToRecord(sessionID string, s models.ShardRecord) shardMetadataRecord {
+	return shardMetadataRecord{
+		FileID:    sessionID,
+		ShardID:   s.ShardID,
+		SHA256:    s.SHA256,
+		Size:      s.Size,
+		Bucket:    s.Bucket,
+		Region:    s.Region,
+		CreatedAt: s.CreatedAt,
+		Status:    s.Status,
+	}
+}
+
+func recordToShardRecord(r shardMetadataRecord) models.ShardRecord {
+	return models.ShardRecord{
+		FileID:    r.FileID,
+		ShardID:   r.ShardID,
+		SHA256:    r.SHA256,
+		Size:      r.Size,
+		Bucket:    r.Bucket,
+		Region:    r.Region,
+		CreatedAt: r.CreatedAt,
+		Status:    r.Status,
+	}
 }
 
 func sessionToRecord(s *models.UploadSession) uploadSessionRecord {
@@ -696,4 +748,50 @@ func (d *DynamoDBStore) UpdateSessionKeyFile(ctx context.Context, sessionID prim
 		return fmt.Errorf("update session key file: %w", err)
 	}
 	return nil
+}
+
+// ---- shard metadata (Integrity Engine) ----
+//
+// See package-level doc comment: this table uses a composite key
+// (file_id, shard_id) since a file has many shard rows. There is no
+// BatchWriteItem in the dynamoDBAPI interface (kept intentionally small for
+// testability), so SaveShardMetadata issues one PutItem per shard -- fine at
+// expected shard counts (tens, not thousands, per file).
+
+func (d *DynamoDBStore) SaveShardMetadata(ctx context.Context, sessionID string, shards []models.ShardRecord) error {
+	for _, s := range shards {
+		item, err := attributevalue.MarshalMap(shardRecordToRecord(sessionID, s))
+		if err != nil {
+			return fmt.Errorf("marshal shard metadata: %w", err)
+		}
+		if _, err := d.client.PutItem(ctx, &dynamodb.PutItemInput{
+			TableName: aws.String(d.shardMetadataTable),
+			Item:      item,
+		}); err != nil {
+			return fmt.Errorf("put shard metadata (shard %d): %w", s.ShardID, err)
+		}
+	}
+	return nil
+}
+
+func (d *DynamoDBStore) GetShardMetadata(ctx context.Context, sessionID string) ([]models.ShardRecord, error) {
+	out, err := d.client.Query(ctx, &dynamodb.QueryInput{
+		TableName:              aws.String(d.shardMetadataTable),
+		KeyConditionExpression: aws.String("file_id = :file_id"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":file_id": &types.AttributeValueMemberS{Value: sessionID},
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("query shard metadata: %w", err)
+	}
+	shards := make([]models.ShardRecord, 0, len(out.Items))
+	for _, item := range out.Items {
+		var rec shardMetadataRecord
+		if err := attributevalue.UnmarshalMap(item, &rec); err != nil {
+			return nil, fmt.Errorf("unmarshal shard metadata: %w", err)
+		}
+		shards = append(shards, recordToShardRecord(rec))
+	}
+	return shards, nil
 }

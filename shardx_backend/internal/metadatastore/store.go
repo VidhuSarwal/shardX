@@ -45,4 +45,8 @@ type MetadataStore interface {
 	GetExpiredSessions(ctx context.Context) ([]*models.UploadSession, error)
 	DeleteUploadSession(ctx context.Context, sessionID primitive.ObjectID) error
 	UpdateSessionKeyFile(ctx context.Context, sessionID primitive.ObjectID, keyFilePath string) error
+
+	// Shard metadata (Integrity Engine)
+	SaveShardMetadata(ctx context.Context, sessionID string, shards []models.ShardRecord) error
+	GetShardMetadata(ctx context.Context, sessionID string) ([]models.ShardRecord, error)
 }

@@ -434,3 +434,111 @@ func TestDynamoDBStore_AddDriveAccountToUser_StoresUserIDForGSI(t *testing.T) {
 		t.Fatalf("expected stored user_id %q, got %+v", userID.Hex(), captured["user_id"])
 	}
 }
+
+func TestDynamoDBStore_SaveShardMetadata_PutsOneItemPerShard(t *testing.T) {
+	var puts []map[string]types.AttributeValue
+	fake := &fakeDynamoClient{
+		putItemFn: func(ctx context.Context, in *dynamodb.PutItemInput) (*dynamodb.PutItemOutput, error) {
+			if *in.TableName != "test-shard-metadata" {
+				t.Errorf("expected table test-shard-metadata, got %s", *in.TableName)
+			}
+			puts = append(puts, in.Item)
+			return &dynamodb.PutItemOutput{}, nil
+		},
+	}
+	s := newDynamoDBStoreWithClient(fake, "test")
+
+	shards := []models.ShardRecord{
+		{ShardID: 0, SHA256: "aaa", Size: 100, Bucket: "acct-1", Status: "verified"},
+		{ShardID: 1, SHA256: "bbb", Size: 200, Bucket: "acct-2", Status: "verified"},
+	}
+	if err := s.SaveShardMetadata(context.Background(), "session-1", shards); err != nil {
+		t.Fatalf("SaveShardMetadata: %v", err)
+	}
+
+	if len(puts) != 2 {
+		t.Fatalf("expected 2 PutItem calls, got %d", len(puts))
+	}
+
+	fileIDAttr, ok := puts[0]["file_id"].(*types.AttributeValueMemberS)
+	if !ok || fileIDAttr.Value != "session-1" {
+		t.Fatalf("expected stored file_id %q, got %+v", "session-1", puts[0]["file_id"])
+	}
+	shardIDAttr, ok := puts[0]["shard_id"].(*types.AttributeValueMemberN)
+	if !ok || shardIDAttr.Value != "0" {
+		t.Fatalf("expected stored shard_id 0, got %+v", puts[0]["shard_id"])
+	}
+	sha256Attr, ok := puts[1]["sha256"].(*types.AttributeValueMemberS)
+	if !ok || sha256Attr.Value != "bbb" {
+		t.Fatalf("expected stored sha256 %q, got %+v", "bbb", puts[1]["sha256"])
+	}
+}
+
+func TestDynamoDBStore_SaveShardMetadata_Empty(t *testing.T) {
+	fake := &fakeDynamoClient{
+		putItemFn: func(ctx context.Context, in *dynamodb.PutItemInput) (*dynamodb.PutItemOutput, error) {
+			t.Fatal("PutItem should not be called for an empty shard slice")
+			return nil, nil
+		},
+	}
+	s := newDynamoDBStoreWithClient(fake, "test")
+	if err := s.SaveShardMetadata(context.Background(), "session-1", nil); err != nil {
+		t.Fatalf("expected nil error for empty shard slice, got %v", err)
+	}
+}
+
+func TestDynamoDBStore_GetShardMetadata_QueriesByFileIDAndUnmarshals(t *testing.T) {
+	rec := shardMetadataRecord{
+		FileID:  "session-1",
+		ShardID: 3,
+		SHA256:  "deadbeef",
+		Size:    42,
+		Bucket:  "acct-1",
+		Status:  "verified",
+	}
+	item, err := attributevalue.MarshalMap(rec)
+	if err != nil {
+		t.Fatalf("marshal fixture: %v", err)
+	}
+	fake := &fakeDynamoClient{
+		queryFn: func(ctx context.Context, in *dynamodb.QueryInput) (*dynamodb.QueryOutput, error) {
+			if *in.TableName != "test-shard-metadata" {
+				t.Errorf("expected table test-shard-metadata, got %s", *in.TableName)
+			}
+			fileIDVal, ok := in.ExpressionAttributeValues[":file_id"].(*types.AttributeValueMemberS)
+			if !ok || fileIDVal.Value != "session-1" {
+				t.Errorf("expected :file_id session-1, got %+v", in.ExpressionAttributeValues[":file_id"])
+			}
+			return &dynamodb.QueryOutput{Items: []map[string]types.AttributeValue{item}}, nil
+		},
+	}
+	s := newDynamoDBStoreWithClient(fake, "test")
+
+	shards, err := s.GetShardMetadata(context.Background(), "session-1")
+	if err != nil {
+		t.Fatalf("GetShardMetadata: %v", err)
+	}
+	if len(shards) != 1 {
+		t.Fatalf("expected 1 shard, got %d", len(shards))
+	}
+	if shards[0].ShardID != 3 || shards[0].SHA256 != "deadbeef" {
+		t.Errorf("unexpected shard record: %+v", shards[0])
+	}
+}
+
+func TestDynamoDBStore_GetShardMetadata_EmptyWhenNoItems(t *testing.T) {
+	fake := &fakeDynamoClient{
+		queryFn: func(ctx context.Context, in *dynamodb.QueryInput) (*dynamodb.QueryOutput, error) {
+			return &dynamodb.QueryOutput{Items: nil}, nil
+		},
+	}
+	s := newDynamoDBStoreWithClient(fake, "test")
+
+	shards, err := s.GetShardMetadata(context.Background(), "missing-session")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(shards) != 0 {
+		t.Fatalf("expected 0 shards, got %d", len(shards))
+	}
+}

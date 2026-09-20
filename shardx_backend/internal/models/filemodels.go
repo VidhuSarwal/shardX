@@ -87,6 +87,22 @@ type KeyFile struct {
 	CreatedAt        time.Time           `json:"created_at"`
 }
 
+// ShardRecord is the persisted integrity-metadata record for a single
+// uploaded shard (chunk). Unlike ChunkMetadata (which only ever lives in the
+// downloadable key file), ShardRecord is written to the MetadataStore at
+// upload time so it can be queried later by session/file ID -- e.g. by the
+// Integrity Engine's health check -- without needing the user's key file.
+type ShardRecord struct {
+	FileID    string    `bson:"file_id" dynamodbav:"file_id" json:"file_id"`
+	ShardID   int       `bson:"shard_id" dynamodbav:"shard_id" json:"shard_id"`
+	SHA256    string    `bson:"sha256" dynamodbav:"sha256" json:"sha256"`
+	Size      int64     `bson:"size" dynamodbav:"size" json:"size"`
+	Bucket    string    `bson:"bucket,omitempty" dynamodbav:"bucket,omitempty" json:"bucket,omitempty"`
+	Region    string    `bson:"region,omitempty" dynamodbav:"region,omitempty" json:"region,omitempty"`
+	CreatedAt time.Time `bson:"created_at" dynamodbav:"created_at" json:"created_at"`
+	Status    string    `bson:"status" dynamodbav:"status" json:"status"` // "verified", "corrupted", "missing"
+}
+
 // ProcessRequest - what user sends to finalize
 type ProcessRequest struct {
 	SessionID        string           `json:"session_id"`

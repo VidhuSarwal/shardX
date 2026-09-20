@@ -1,6 +1,7 @@
 package metadatastore
 
 import (
+	"SE/internal/models"
 	"context"
 	"strings"
 	"testing"
@@ -71,6 +72,27 @@ func TestMongoStore_SessionMethods_NotInitialized(t *testing.T) {
 
 	if err := s.UpdateSessionKeyFile(ctx, sessionID, "/tmp/foo.key"); err == nil || !strings.Contains(err.Error(), "not initialized") {
 		t.Errorf("UpdateSessionKeyFile: expected 'not initialized' error, got %v", err)
+	}
+}
+
+// TestMongoStore_ShardMetadataMethods_NotInitialized mirrors
+// TestMongoStore_SessionMethods_NotInitialized for the new shard-metadata
+// methods: internal/store.SaveShardMetadata/GetShardMetadata nil-check
+// their package-level shardMetadataCol and return an explicit
+// "not initialized" error (rather than panicking) when InitStore has not
+// been called, exactly like the sessions collection. This lets us prove the
+// MongoStore wrapper delegates correctly without needing a live MongoDB.
+func TestMongoStore_ShardMetadataMethods_NotInitialized(t *testing.T) {
+	s := NewMongoStore()
+	ctx := context.Background()
+
+	shards := []models.ShardRecord{{ShardID: 0, SHA256: "abc", Size: 10, Status: "verified"}}
+	if err := s.SaveShardMetadata(ctx, "session-1", shards); err == nil || !strings.Contains(err.Error(), "not initialized") {
+		t.Errorf("SaveShardMetadata: expected 'not initialized' error, got %v", err)
+	}
+
+	if _, err := s.GetShardMetadata(ctx, "session-1"); err == nil || !strings.Contains(err.Error(), "not initialized") {
+		t.Errorf("GetShardMetadata: expected 'not initialized' error, got %v", err)
 	}
 }
 

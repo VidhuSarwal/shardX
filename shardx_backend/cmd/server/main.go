@@ -69,6 +69,7 @@ func main() {
 	authProv := selectAuthProvider(os.Getenv("AUTH_PROVIDER"))
 	filehandlers.InitEvents(selectEventEmitter(os.Getenv("EVENT_BUS_NAME")))
 	filehandlers.InitOrchestrator(selectOrchestrator(os.Getenv("STATE_MACHINE_ARN")))
+	filehandlers.InitMetadataStore(metaStore)
 
 	// NOTE: storageProvider and authProv are constructed here to prove the
 	// providers are selectable and usable, but most existing handlers
@@ -108,6 +109,12 @@ func main() {
 	mux.HandleFunc("/api/files/upload/status/", auth.AuthMiddleware(requireMethod("GET", filehandlers.GetUploadStatusHandler)))
 	mux.HandleFunc("/api/files/chunking/calculate", auth.AuthMiddleware(requireMethod("POST", filehandlers.CalculateChunkingHandler)))
 	mux.HandleFunc("/api/files/download-key/", auth.AuthMiddleware(requireMethod("GET", filehandlers.DownloadKeyFileHandler)))
+
+	// Integrity Engine: shard health score. Registered against the
+	// "/api/files/" prefix since the session ID sits in the middle of the
+	// path ("/api/files/{session_id}/health"); ServeMux's longest-prefix
+	// match means the more specific routes above still take precedence.
+	mux.HandleFunc("/api/files/", auth.AuthMiddleware(requireMethod("GET", filehandlers.GetFileHealthHandler)))
 
 	// OAuth callback (no auth header; state validated via DB)
 	mux.HandleFunc("/oauth2/callback", requireMethod("GET", oauth.OauthCallbackHandler))

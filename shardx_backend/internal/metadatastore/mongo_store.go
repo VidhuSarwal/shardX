@@ -92,3 +92,11 @@ func (m *MongoStore) DeleteUploadSession(ctx context.Context, sessionID primitiv
 func (m *MongoStore) UpdateSessionKeyFile(ctx context.Context, sessionID primitive.ObjectID, keyFilePath string) error {
 	return store.UpdateSessionKeyFile(ctx, sessionID, keyFilePath)
 }
+
+func (m *MongoStore) SaveShardMetadata(ctx context.Context, sessionID string, shards []models.ShardRecord) error {
+	return store.SaveShardMetadata(ctx, sessionID, shards)
+}
+
+func (m *MongoStore) GetShardMetadata(ctx context.Context, sessionID string) ([]models.ShardRecord, error) {
+	return store.GetShardMetadata(ctx, sessionID)
+}

@@ -60,12 +60,17 @@ func TestDynamoDBStore_LocalStack(t *testing.T) {
 	for name, schema := range tables {
 		createTestTable(ctx, t, client, name, schema.pk, schema.gsi, schema.gpk)
 	}
+
+	shardMetadataTable := prefix + "-shard-metadata"
+	createCompositeKeyTestTable(ctx, t, client, shardMetadataTable, "file_id", "shard_id")
+
 	t.Cleanup(func() {
 		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cleanupCancel()
 		for name := range tables {
 			_, _ = client.DeleteTable(cleanupCtx, &dynamodb.DeleteTableInput{TableName: aws.String(name)})
 		}
+		_, _ = client.DeleteTable(cleanupCtx, &dynamodb.DeleteTableInput{TableName: aws.String(shardMetadataTable)})
 	})
 
 	store := newDynamoDBStoreWithClient(client, prefix)
@@ -221,6 +226,63 @@ func TestDynamoDBStore_LocalStack(t *testing.T) {
 			t.Error("expected nil session after delete")
 		}
 	})
+
+	t.Run("Shard metadata", func(t *testing.T) {
+		sessionID := primitive.NewObjectID().Hex()
+		shards := []models.ShardRecord{
+			{ShardID: 0, SHA256: "aaa", Size: 100, Bucket: "acct-1", Status: "verified", CreatedAt: time.Now().UTC()},
+			{ShardID: 1, SHA256: "bbb", Size: 200, Bucket: "acct-2", Status: "verified", CreatedAt: time.Now().UTC()},
+		}
+		if err := store.SaveShardMetadata(ctx, sessionID, shards); err != nil {
+			t.Fatalf("SaveShardMetadata: %v", err)
+		}
+
+		got, err := store.GetShardMetadata(ctx, sessionID)
+		if err != nil {
+			t.Fatalf("GetShardMetadata: %v", err)
+		}
+		if len(got) != 2 {
+			t.Fatalf("expected 2 shard records, got %d", len(got))
+		}
+
+		otherSession := primitive.NewObjectID().Hex()
+		none, err := store.GetShardMetadata(ctx, otherSession)
+		if err != nil {
+			t.Fatalf("GetShardMetadata (other session): %v", err)
+		}
+		if len(none) != 0 {
+			t.Errorf("expected 0 shard records for unrelated session, got %d", len(none))
+		}
+	})
+}
+
+// createCompositeKeyTestTable creates a LocalStack DynamoDB table with a
+// composite primary key (partition key + sort key), used by the
+// shard-metadata table which needs one row per shard per file.
+func createCompositeKeyTestTable(ctx context.Context, t *testing.T, client *dynamodb.Client, tableName, pk, sk string) {
+	t.Helper()
+
+	input := &dynamodb.CreateTableInput{
+		TableName: aws.String(tableName),
+		AttributeDefinitions: []types.AttributeDefinition{
+			{AttributeName: aws.String(pk), AttributeType: types.ScalarAttributeTypeS},
+			{AttributeName: aws.String(sk), AttributeType: types.ScalarAttributeTypeN},
+		},
+		KeySchema: []types.KeySchemaElement{
+			{AttributeName: aws.String(pk), KeyType: types.KeyTypeHash},
+			{AttributeName: aws.String(sk), KeyType: types.KeyTypeRange},
+		},
+		BillingMode: types.BillingModePayPerRequest,
+	}
+
+	if _, err := client.CreateTable(ctx, input); err != nil {
+		t.Fatalf("create table %s: %v", tableName, err)
+	}
+
+	waiter := dynamodb.NewTableExistsWaiter(client)
+	if err := waiter.Wait(ctx, &dynamodb.DescribeTableInput{TableName: aws.String(tableName)}, 30*time.Second); err != nil {
+		t.Fatalf("wait for table %s: %v", tableName, err)
+	}
 }
 
 func createTestTable(ctx context.Context, t *testing.T, client *dynamodb.Client, tableName, pk, gsiName, gsiPK string) {
