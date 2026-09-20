@@ -7,6 +7,7 @@ import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
 import { Upload, FileText, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
 import { api } from '@/lib/api';
+import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
 
 const CHUNK_SIZE = 5 * 1024 * 1024; // 5MB recommended 5–10MB
@@ -472,6 +473,9 @@ const Files = () => {
                       <div className="mt-4 flex gap-2">
                         <Button id='downloadKey' size="sm" onClick={() => onDownloadKey(upload)}>
                           Download Key File
+                        </Button>
+                        <Button size="sm" variant="outline" asChild>
+                          <Link to={`/files/${upload.sessionId}`}>View Health & Shard Map</Link>
                         </Button>
                       </div>
                     )}

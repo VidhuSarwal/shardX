@@ -52,12 +52,14 @@ context. Treat this as the source of truth over memory/chat history.
 - [x] DynamoDB table definitions — `infrastructure/terraform/modules/storage/dynamodb.tf` (5 on-demand tables, GSIs w/ ALL projection, oauth-states TTL, CMK encryption). Table ARNs + retry queue ARN now feed the identity module so api-role/shard-worker-role get scoped DynamoDB + SQS grants. `terraform validate` passes.
 - [ ] **Not yet applied to real AWS at all.** No `terraform apply` has been run. The default S3 bucket name (`shardx-prod-shards`) will collide globally — must be overridden via tfvars before first apply.
 
-### Group 4 — Frontend (not started)
-- [ ] API client additions in `shardx_frontend/src/lib/api.ts` for shard placement/health/audit timeline (health endpoint already exists server-side: `GET /api/files/{session_id}/health`)
-- [ ] Shard Map component
-- [ ] File Health card
-- [ ] Audit Timeline view
-- [ ] Vitest tests for the above
+### Group 4 — Frontend ✅ done
+- [x] Backend: `GET /api/files/{session_id}/shards` and `/timeline` added next to `/health` (timeline is derived from the persisted session + shard records — no separate event store)
+- [x] API client additions in `shardx_frontend/src/lib/api.ts` (`getFileHealth`, `getFileShards`, `getFileTimeline` + types)
+- [x] Shard Map component (`src/components/ShardMap.tsx`)
+- [x] File Health card (`src/components/FileHealthCard.tsx`)
+- [x] Audit Timeline view (`src/components/AuditTimeline.tsx`)
+- [x] `/files/:sessionId` page (`src/pages/FileDetail.tsx`), linked from completed uploads; polls while shards are `pending`
+- [x] Vitest tests for the render-free logic in `src/lib/fileDetail.ts` (`src/lib/__tests__/fileDetail.test.ts`), same pattern as `oauth.test.ts`
 
 ### Group 5 — Repo restructuring & docs (partially started)
 - [x] `docs/PLAN.md` (this migration's plan, copied from the planning session)

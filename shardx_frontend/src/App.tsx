@@ -7,6 +7,7 @@ import { AuthProvider } from "@/hooks/useAuth";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import Files from "./pages/Files";
+import FileDetail from "./pages/FileDetail";
 import Download from "./pages/Download";
 import Profile from "./pages/Profile";
 import OAuthFinished from "./pages/OAuthFinished";
@@ -28,6 +29,7 @@ const App = () => (
               <Route path="/login" element={<Login />} />
               <Route path="/signup" element={<Signup />} />
               <Route path="/files" element={<Files />} />
+              <Route path="/files/:sessionId" element={<FileDetail />} />
               <Route path="/download" element={<Download />} />
               <Route path="/profile" element={<Profile />} />
               <Route path="/oauth/finished" element={<OAuthFinished />} />

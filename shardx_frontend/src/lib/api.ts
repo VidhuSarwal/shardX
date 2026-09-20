@@ -129,6 +129,38 @@ export const apiRequestBlob = async (
   return response.blob();
 };
 
+// ---- Integrity Engine / shard placement / audit timeline ----
+
+export type FileHealth = {
+  file_id: string;
+  health_percentage: number;
+  shards_available: number;
+  shards_total: number;
+  integrity_checks_passed: number;
+  integrity_checks_total: number;
+  corruption_events: number;
+};
+
+export type ShardStatus = 'verified' | 'pending' | 'corrupted' | 'missing';
+
+export type ShardRecord = {
+  file_id: string;
+  shard_id: number;
+  sha256: string;
+  size: number;
+  /** Drive account ID in Drive mode; S3 bucket name in S3 mode. */
+  bucket?: string;
+  region?: string;
+  created_at: string;
+  status: ShardStatus;
+};
+
+export type TimelineEvent = {
+  type: string;
+  at: string | null;
+  detail?: Record<string, unknown>;
+};
+
 export type DownloadStatusResponse = {
   status: 'downloading' | 'decrypting' | 'complete' | 'failed';
   progress: number;
@@ -284,6 +316,16 @@ export const api = {
       // Let caller handle any 401 (e.g., refresh once then retry)
       skipAuthRedirect: true,
     }),
+
+  // Integrity Engine (backend: GET /api/files/{session_id}/health|shards|timeline)
+  getFileHealth: (sessionId: string) =>
+    apiRequest<FileHealth>(`/api/files/${sessionId}/health`),
+
+  getFileShards: (sessionId: string) =>
+    apiRequest<{ file_id: string; shards: ShardRecord[] }>(`/api/files/${sessionId}/shards`),
+
+  getFileTimeline: (sessionId: string) =>
+    apiRequest<{ file_id: string; events: TimelineEvent[] }>(`/api/files/${sessionId}/timeline`),
 
   initiateDownload: (keyFile: File) => {
     const formData = new FormData();
