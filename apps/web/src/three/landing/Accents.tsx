@@ -26,7 +26,7 @@ const useChapterGroup = (chapters: number[], reduced: boolean, enter = 0.15) => 
 };
 
 const Label = ({ children, position }: { children: string; position: [number, number, number] }) => (
-  <Html position={position} center distanceFactor={8} className="pointer-events-none select-none whitespace-nowrap rounded-md border border-border bg-background/70 px-2 py-1 font-mono text-[11px] text-foreground/90 backdrop-blur">
+  <Html position={position} center distanceFactor={8} className="animate-in fade-in duration-500 pointer-events-none select-none whitespace-nowrap rounded-md border border-border bg-background/70 px-2 py-1 font-mono text-[11px] text-foreground/90 backdrop-blur">
     {children}
   </Html>
 );

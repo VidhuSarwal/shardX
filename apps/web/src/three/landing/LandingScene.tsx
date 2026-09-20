@@ -15,7 +15,7 @@ const CameraRig = ({ reduced }: { reduced: boolean }) => {
     const { chapter, mouse } = progressStore;
     const z = chapter === 2 ? 9 : chapter === 4 || chapter === 7 ? 8 : 7;
     const targetX = reduced ? 0 : mouse[0] * 0.6;
-    const targetY = reduced ? 0 : mouse[1] * 0.4;
+    const targetY = (reduced ? 0 : mouse[1] * 0.4) + (chapter === 0 || chapter === 8 ? 1.2 : 0);
     camera.position.x = THREE.MathUtils.damp(camera.position.x, targetX, 3, dt);
     camera.position.y = THREE.MathUtils.damp(camera.position.y, targetY, 3, dt);
     camera.position.z = THREE.MathUtils.damp(camera.position.z, z, 2, dt);

@@ -39,7 +39,7 @@ export const buildTargets = (n: number, seed = 1): Record<TargetName, Float32Arr
   const slab = fill(n, (o, out) => { out[o] = (r() - 0.5) * 3; out[o + 1] = (r() - 0.5) * 2; out[o + 2] = (r() - 0.5) * 0.15; });
   const grid = fill(n, (o, out) => {
     const col = Math.floor(r() * 5), row = Math.floor(r() * 4);
-    out[o] = -1.6 + col * 0.8 + (r() - 0.5) * 0.6; out[o + 1] = 1.2 - row * 0.8 + (r() - 0.5) * 0.6; out[o + 2] = (r() - 0.5) * 0.1;
+    out[o] = -1.6 + col * 0.8 + (r() - 0.5) * 0.25; out[o + 1] = 1.2 - row * 0.8 + (r() - 0.5) * 0.25; out[o + 2] = (r() - 0.5) * 0.1;
   });
   const noise = fill(n, (o, out) => {
     const u = r() * 2 - 1, phi = r() * Math.PI * 2, rad = 1.5 + r() * 3;

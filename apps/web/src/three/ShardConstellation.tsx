@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { Html, OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
@@ -8,15 +8,19 @@ import { useReducedMotion } from '@/hooks/useReducedMotion';
 
 const STATUS_COLOR: Record<string, string> = { verified: '#3dffa0', pending: '#ffb02e', corrupted: '#ff4d4d', missing: '#7a2a2a' };
 
-const Shard = ({ s, position }: { s: ShardRecord; position: [number, number, number] }) => {
+const Shard = ({ s, position, reduced }: { s: ShardRecord; position: [number, number, number]; reduced: boolean }) => {
   const [hover, setHover] = useState(false);
   const color = STATUS_COLOR[s.status] ?? '#888';
+  const mat = useRef<THREE.MeshStandardMaterial>(null);
+  useFrame(({ clock }) => {
+    if (mat.current && s.status === 'pending' && !reduced) mat.current.emissiveIntensity = 0.9 + 0.5 * Math.sin(clock.elapsedTime * 4);
+  });
   return (
     <mesh position={position} scale={hover ? 1.35 : 1}
       onPointerOver={(e) => { e.stopPropagation(); setHover(true); }}
       onPointerOut={() => setHover(false)}>
       <octahedronGeometry args={[0.22, 0]} />
-      <meshStandardMaterial color={color} emissive={color} emissiveIntensity={s.status === 'pending' ? 1.2 : 0.6} />
+      <meshStandardMaterial ref={mat} color={color} emissive={color} emissiveIntensity={s.status === 'pending' ? 1.2 : 0.6} />
       {hover && (
         <Html center distanceFactor={6} className="pointer-events-none whitespace-nowrap rounded-md border border-border bg-background/90 px-2 py-1 font-mono text-[11px]">
           <div>shard #{s.shard_id} · {s.status}</div>
@@ -32,7 +36,7 @@ const Rings = ({ shards, driveNames, reduced }: { shards: ShardRecord[]; driveNa
   const targets = useMemo(() => groupShardsByTarget(shards, driveNames), [shards, driveNames]);
   const groups = useMemo(() => targets.map((t, ti) => {
     const R = 1.2 + ti * 1.1;
-    return { label: t.label, R, items: t.shards.map((s, i) => {
+    return { label: t.label, R, y: ti % 2 ? 0.3 : -0.3, items: t.shards.map((s, i) => {
       const a = (i / t.shards.length) * Math.PI * 2;
       return { s, position: [Math.cos(a) * R, (ti % 2 ? 0.3 : -0.3), Math.sin(a) * R] as [number, number, number] };
     }) };
@@ -44,8 +48,8 @@ const Rings = ({ shards, driveNames, reduced }: { shards: ShardRecord[]; driveNa
       {groups.map((g, gi) => (
         <group key={gi}>
           <mesh rotation={[Math.PI / 2, 0, 0]}><torusGeometry args={[g.R, 0.006, 8, 128]} /><meshBasicMaterial color="#1e2433" /></mesh>
-          <Html position={[g.R + 0.35, 0, 0]} center className="pointer-events-none whitespace-nowrap font-mono text-[10px] text-muted-foreground">{g.label}</Html>
-          {g.items.map(({ s, position }) => <Shard key={s.shard_id} s={s} position={position} />)}
+          <Html position={[g.R + 0.35, g.y, 0]} center className="pointer-events-none whitespace-nowrap font-mono text-[10px] text-muted-foreground">{g.label}</Html>
+          {g.items.map(({ s, position }) => <Shard key={s.shard_id} s={s} position={position} reduced={reduced} />)}
         </group>
       ))}
     </primitive>
