@@ -14,7 +14,7 @@ Given hackathon time/cost constraints, this plan targets **Phase 1 MVP only**: a
 
 **Credentials:** Do NOT paste AWS access keys into this chat — `aws configure` does not mask secret input and it would land in the transcript permanently. Instead:
 1. In the AWS Console, create a dedicated IAM user (not root) scoped to this project (S3, KMS, DynamoDB, Cognito, Step Functions, SQS, EventBridge, CloudWatch, CloudTrail, API Gateway, IAM-for-role-creation, Budgets — least privilege, not AdministratorAccess).
-2. Open a **separate terminal outside this Claude Code session** and run `aws configure --profile shardx`, pasting the access key/secret there.
+2. Open a **separate terminal outside this terminal session** and run `aws configure --profile shardx`, pasting the access key/secret there.
 3. Tell me the profile name (`shardx`); I'll use `AWS_PROFILE=shardx` for all AWS/Terraform calls. The secret itself never enters my context.
 
 **Scope decision carried forward:** "no hard changes" (your instruction) is applied not just to Google Drive but to Mongo/JWT too — DynamoDB and Cognito are added as new, env-selectable providers alongside the existing ones, not replacements. Flag if you actually meant Drive-only.
