@@ -183,6 +183,20 @@ func selectAuthProvider(provider string) authprovider.AuthProvider {
 	switch provider {
 	case "custom":
 		return authprovider.NewCustomProvider()
+	case "cognito":
+		userPoolID := os.Getenv("COGNITO_USER_POOL_ID")
+		clientID := os.Getenv("COGNITO_CLIENT_ID")
+		region := os.Getenv("AWS_REGION")
+		if userPoolID == "" || clientID == "" || region == "" {
+			log.Fatalf("AUTH_PROVIDER=cognito requires COGNITO_USER_POOL_ID, COGNITO_CLIENT_ID, and AWS_REGION")
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		p, err := authprovider.NewCognitoProvider(ctx, userPoolID, clientID, region)
+		if err != nil {
+			log.Fatalf("init cognito auth provider: %v", err)
+		}
+		return p
 	default:
 		log.Fatalf("AUTH_PROVIDER %q not yet implemented, coming in a later phase", provider)
 		return nil
