@@ -12,3 +12,4 @@
 !*.tfvars.example
 
 .DS_Store
+.worktrees/
