@@ -12,7 +12,17 @@ export const Ring = ({ value, className }: { value: number; className?: string }
   useEffect(() => {
     if (!ref.current || !num.current) return;
     const o = { v: 0 };
-    gsap.to(o, { v: value, duration: reduced ? 0 : 1.4, ease: 'power3.out', onUpdate: () => { ref.current!.style.strokeDashoffset = String(C - (C * o.v) / 100); num.current!.textContent = `${Math.round(o.v)}%`; } });
+    const tween = gsap.to(o, {
+      v: value,
+      duration: reduced ? 0 : 1.4,
+      ease: 'power3.out',
+      onUpdate: () => {
+        if (!ref.current || !num.current) return;
+        ref.current.style.strokeDashoffset = String(C - (C * o.v) / 100);
+        num.current.textContent = `${Math.round(o.v)}%`;
+      },
+    });
+    return () => { tween.kill(); };
   }, [value, reduced, C]);
   return (
     <div className={cn('relative h-36 w-36', className)}>

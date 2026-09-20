@@ -13,11 +13,26 @@ export const Tour = ({ steps, state, dispatch }: { steps: TourStep[]; state: Tou
   const [rect, setRect] = useState<DOMRect | null>(null);
   const available = steps.map((s) => !!document.querySelector(s.selector));
   const step = steps[state.index];
+  const restoreFocus = useRef<Element | null>(null);
 
-  // If the current step's target isn't on the page, advance.
+  // If the current step's target isn't on the page, advance. Re-query the DOM
+  // inside the effect rather than closing over `available` from render — that
+  // value would be stale without state.open/state.index in the dep array.
   useEffect(() => {
-    if (state.open && !available[state.index]) dispatch({ type: 'next', available });
-  });
+    if (!state.open) return;
+    const avail = steps.map((s) => !!document.querySelector(s.selector));
+    if (!avail[state.index]) dispatch({ type: 'next', available: avail });
+  }, [state.open, state.index, steps, dispatch]);
+
+  // Capture focus when the tour opens and restore it when the tour closes.
+  useEffect(() => {
+    if (state.open) {
+      restoreFocus.current = document.activeElement;
+    } else if (restoreFocus.current) {
+      (restoreFocus.current as HTMLElement)?.focus?.();
+      restoreFocus.current = null;
+    }
+  }, [state.open]);
 
   useLayoutEffect(() => {
     if (!state.open) return;

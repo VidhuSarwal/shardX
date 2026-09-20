@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import gsap from 'gsap';
 import { useGSAP } from '@gsap/react';
@@ -15,10 +15,23 @@ const NAV = [
   { to: '/guide', label: 'Guide', icon: BookOpen, id: 'nav-guide' },
 ];
 
+/** Tracks a media query, matching Tailwind's `lg` breakpoint (1024px) used below. */
+const useMediaQuery = (query: string): boolean => {
+  const [matches, setMatches] = useState(() => typeof window !== 'undefined' && window.matchMedia(query).matches);
+  useEffect(() => {
+    const mq = window.matchMedia(query);
+    const on = (e: MediaQueryListEvent) => setMatches(e.matches);
+    mq.addEventListener('change', on);
+    return () => mq.removeEventListener('change', on);
+  }, [query]);
+  return matches;
+};
+
 export const AppShell = ({ children, onHelp }: { children: ReactNode; onHelp?: () => void }) => {
   const { logout } = useAuth();
   const { pathname } = useLocation();
   const [open, setOpen] = useState(false);
+  const desktop = useMediaQuery('(min-width: 1024px)');
   const email = getAuthEmail();
   const pill = useRef<HTMLSpanElement>(null);
   const list = useRef<HTMLElement>(null);
@@ -28,7 +41,7 @@ export const AppShell = ({ children, onHelp }: { children: ReactNode; onHelp?: (
     const active = list.current?.querySelector<HTMLElement>('[aria-current="page"]');
     if (!active || !pill.current) return;
     gsap.to(pill.current, { y: active.offsetTop, height: active.offsetHeight, duration: 0.4, ease: 'power3.out' });
-  }, { dependencies: [pathname], scope: list });
+  }, { dependencies: [pathname, desktop], scope: list });
 
   const nav = (
     <nav ref={list} className="relative flex flex-col gap-1" aria-label="Primary">
@@ -58,17 +71,20 @@ export const AppShell = ({ children, onHelp }: { children: ReactNode; onHelp?: (
 
   return (
     <div className="min-h-screen lg:grid lg:grid-cols-[240px_1fr]">
-      <aside className="hidden lg:flex lg:flex-col lg:gap-8 lg:border-r lg:border-border/60 lg:p-5 lg:sticky lg:top-0 lg:h-screen">
-        <Link to="/" className="flex items-center gap-2 px-2 font-semibold"><span className="h-3 w-3 rotate-45 bg-gradient-to-br from-primary to-accent shadow-glow-primary" /> ShardX</Link>
-        {nav}
-        {user}
-      </aside>
-      <header className="sticky top-0 z-40 flex items-center justify-between border-b border-border/60 glass px-4 py-3 lg:hidden">
-        <Link to="/" className="flex items-center gap-2 font-semibold"><span className="h-3 w-3 rotate-45 bg-gradient-to-br from-primary to-accent" /> ShardX</Link>
-        <Button variant="ghost" size="icon" aria-label={open ? 'Close menu' : 'Open menu'} aria-expanded={open} onClick={() => setOpen((v) => !v)}>{open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}</Button>
-      </header>
-      {open && (
-        <div className="fixed inset-0 z-30 flex flex-col gap-6 bg-background p-5 pt-20 lg:hidden">
+      {desktop ? (
+        <aside className="flex flex-col gap-8 border-r border-border/60 p-5 sticky top-0 h-screen">
+          <Link to="/" className="flex items-center gap-2 px-2 font-semibold"><span className="h-3 w-3 rotate-45 bg-gradient-to-br from-primary to-accent shadow-glow-primary" /> ShardX</Link>
+          {nav}
+          {user}
+        </aside>
+      ) : (
+        <header className="sticky top-0 z-40 flex items-center justify-between border-b border-border/60 glass px-4 py-3">
+          <Link to="/" className="flex items-center gap-2 font-semibold"><span className="h-3 w-3 rotate-45 bg-gradient-to-br from-primary to-accent" /> ShardX</Link>
+          <Button variant="ghost" size="icon" aria-label={open ? 'Close menu' : 'Open menu'} aria-expanded={open} onClick={() => setOpen((v) => !v)}>{open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}</Button>
+        </header>
+      )}
+      {!desktop && open && (
+        <div className="fixed inset-0 z-30 flex flex-col gap-6 bg-background p-5 pt-20">
           {nav}{user}
         </div>
       )}

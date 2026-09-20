@@ -40,3 +40,17 @@ test('tour shows once on /files', async ({ page }) => {
   await page.locator('#tour-help').click();
   await expect(page.getByRole('dialog')).toBeVisible();
 });
+
+test.describe('mobile nav', () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  test('tour targets are unique on mobile', async ({ page }) => {
+    await page.addInitScript(() => localStorage.setItem('auth_token', 'x'));
+    await page.goto('/files');
+    await expect(page.getByRole('dialog')).toBeVisible();
+    await page.keyboard.press('Escape'); // dismiss the auto-opening tour overlay first
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await page.getByRole('button', { name: 'Open menu' }).click();
+    await expect(page.locator('#tour-help')).toHaveCount(1);
+  });
+});
