@@ -18,18 +18,14 @@ context. Treat this as the source of truth over memory/chat history.
    down` when finished so nothing idles on the machine.
 5. Keep committing after each discrete unit of work, not in one giant
    batch at the end.
-6. AWS credentials are intentionally **not** wired up yet — the user
-   wants to hand those over only at the very end, right before Terraform
-   actually gets applied / before live Cognito-pool testing. Don't block
-   on needing them; everything so far has been built against mocks and
-   LocalStack.
+6. AWS credentials: `AWS_PROFILE=shardx` (account 694282668761, user `shardx-deployer`) is configured locally and Terraform is applied. Everything before 2026-09-20 was built against mocks + LocalStack; live E2E status is tracked under "Remaining" below.
 
 ## Running locally (verified 2026-09-20)
 
 ```
 brew services start mongodb-community      # DB name is hardcoded to "complete" in internal/store
 cd apps/api && cp .env.example .env         # fill JWT_SECRET, TOKEN_ENC_KEY (openssl rand -base64 32)
-go run ./cmd/server                         # :5555
+go run ./cmd/server                         # :5555 (override with PORT=…)
 cd apps/web && npm install && npm run dev   # :5173
 ```
 
@@ -59,12 +55,12 @@ shard records.
 - [x] Integrity engine + health endpoint (`internal/integrity/`, `GET /api/files/{session_id}/health`) — persisted-status check, not a full re-hash (documented as an honest scope limit)
 - [x] SQS + DLQ for shard upload retries — `internal/queue/` (Queue + SQSQueue + NoopQueue), `internal/worker/` (retry consumer), `cmd/shardworker/main.go`. In S3 mode a failed chunk upload is enqueued (chunk file kept on disk, shard record `pending`, session stays `processing`); the worker re-uploads, patches the key file, marks the shard `verified`, and completes the session when nothing is pending. `SQS_QUEUE_URL` unset → `NoopQueue` → original fail-fast. Drive-mode path untouched. Added `MetadataStore.UpdateShardStatus` and `internal/bootstrap` (provider selectors shared by both binaries).
 
-### Group 3 — Infrastructure as Code ✅ done (not yet applied to real AWS)
+### Group 3 — Infrastructure as Code ✅ done (applied 2026-09-20)
 - [x] Terraform modules: budget, storage (S3+KMS), identity (Cognito+IAM), orchestration (EventBridge/SQS/Step Functions), observability (CloudWatch/CloudTrail) — `infrastructure/terraform/`
 - [x] Standalone OpenSearch module (`infrastructure/terraform/search/`) — apply/destroy independently per dev session for cost control
 - [x] Apply/destroy runbook in `infrastructure/terraform/README.md`
 - [x] DynamoDB table definitions — `infrastructure/terraform/modules/storage/dynamodb.tf` (5 on-demand tables, GSIs w/ ALL projection, oauth-states TTL, CMK encryption). Table ARNs + retry queue ARN now feed the identity module so api-role/shard-worker-role get scoped DynamoDB + SQS grants. `terraform validate` passes.
-- [ ] **Not yet applied to real AWS at all.** No `terraform apply` has been run. The default S3 bucket name (`shardx-prod-shards`) will collide globally — must be overridden via tfvars before first apply.
+- [x] Applied to account 694282668761 on 2026-09-20 (53 resources, `terraform plan` clean). Bucket overridden via `terraform.tfvars` (`shardx-694282668761-shards`); state is local + gitignored.
 
 ### Group 4 — Frontend ✅ done
 - [x] Backend: `GET /api/files/{session_id}/shards` and `/timeline` added next to `/health` (timeline is derived from the persisted session + shard records — no separate event store)
@@ -82,16 +78,22 @@ shard records.
 - [x] `docs/ARCHITECTURE.md` describing what was actually built
 - [x] `UPDATE.md` summarizing Vcrypt → ShardX changes
 
-## Remaining (needs real credentials)
+## Live AWS verification (2026-09-20, account 694282668761)
 
-- [ ] `terraform apply` against a real AWS account (budget module first), then run `cmd/server` + `cmd/shardworker` with `STORAGE_PROVIDER=s3 SQS_QUEUE_URL=…` and do one real upload → health → worker-retry cycle.
-- [ ] Live Cognito pool test of signup/login.
-- [ ] Drive-mode regression run (`tester2.sh`) with real Google OAuth creds.
+- [x] S3 mode: `cmd/server` + `cmd/shardworker` with `STORAGE_PROVIDER=s3 SQS_QUEUE_URL=…`. Real upload → `complete`, `/health` 100%, `/shards` `verified`, object in S3 with SSE-KMS, Step Functions execution `SUCCEEDED`. Retry path verified by pointing the server at a bogus `S3_KMS_KEY_ID`: chunk enqueued (`pending`, `SHARD_QUEUED_FOR_RETRY`), worker re-uploaded, patched key file, session `complete`, queue + DLQ empty.
+- [x] Cognito mode: `AUTH_PROVIDER=cognito` now actually routes signup/login/middleware through the provider (it was constructed and discarded before). Live signup → CONFIRMED user (in-code `AdminConfirmSignUp`, no manual step), login → RS256 ID token, authed routes 200, tampered token 401. Middleware maps `sub` → deterministic `ObjectID` (`subToObjectID`), see known gaps.
+- [x] DynamoDB store: all 5 tables match the code's schema; all 20 `MetadataStore` methods pass against the real tables. `DB_PROVIDER=dynamodb` through HTTP is only partially effective — see known gaps.
+- [ ] Drive-mode regression run (`tester2.sh`) — blocked on real `GOOGLE_CLIENT_ID/SECRET` (only placeholders in `.env`).
 
 ## Known gaps / honest limitations to carry forward
 
-- Cognito `AuthMiddleware` puts the Cognito `sub` (UUID) in the same context key handlers expect to be a Mongo `ObjectID` — unresolved until Cognito auth is actually wired into a live route.
+- Cognito users have no `users` document: `AuthMiddleware` derives the context `ObjectID` from `sha256(sub)[:12]`, which is enough for uploads/listing but `oauth.DriveLinkHandler` (update by `_id`) finds nothing. Proper fix: `FindOrCreateUserByCognitoSub` on `MetadataStore` and put the real `_id` in the context. Also `email_verified` stays `false` after `AdminConfirmSignUp`, so Cognito forgot-password won't work for these users.
+- `DB_PROVIDER=dynamodb` is half-wired: `internal/auth` (users), `internal/fileprocessor/session.go` (upload sessions), `internal/oauth` (states/drive accounts) and `filehandlers.GetUploadStatusHandler` still call `internal/store` (Mongo) directly — 18 call sites in 4 files. Consequence: in dynamodb mode shard rows land in DynamoDB but sessions/users land in Mongo, so `/api/files/{id}/health|shards|timeline` 404 ("session not found"). Routing those call sites through `metaStore` is the remaining work for a real DynamoDB cutover.
+- Retry worker race: the retry job is enqueued before the key file is written, so the first SQS delivery always fails ("session has no key file yet") and burns one of 5 receives + a 60 s visibility delay. Fix: enqueue after `UpdateSessionKeyFile` in `processAndUploadFile`.
+- `UPLOAD_TEMP_DIR` is not session-scoped: chunk/key files for two concurrent sessions with the same filename clobber each other (pre-existing in `internal/fileprocessor`).
+- With one S3 "drive", every strategy yields exactly one shard per file.
+- `shardx-deployer` lacks `dynamodb:ListTables` (per-table ops work).
 - S3 `GetSpace` returns an unlimited sentinel, not real usage — real usage should come from DynamoDB-tracked logical size later.
 - Step Functions execution ARic is logged, not persisted on `UploadSession` (no field exists for it yet).
 - Integrity health check is presence/status-based, not a re-hash of shard bytes.
-- No end-to-end test against real AWS has been run anywhere in this migration — only LocalStack + mocks. First real integration will surface real IAM/bucket-naming/Cognito-flow issues; that's expected, not a regression.
+- Only the S3 storage path has been exercised against real AWS (Mongo + custom JWT still in front of it). DynamoDB store and Cognito auth have not been run live.

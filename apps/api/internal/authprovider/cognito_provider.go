@@ -32,28 +32,21 @@
 //     the provider's "token" string, matching the shape CustomProvider
 //     returns (a single opaque bearer token string).
 //
-//   - AuthMiddleware here stores the validated Cognito `sub` (a UUID
-//     string) in the request context under the same "userID" key that
-//     auth.AuthMiddleware uses. IMPORTANT: every current consumer of that
-//     context key (internal/oauth, internal/filehandlers,
-//     internal/handlers) does a hard type assertion to
-//     primitive.ObjectID, which a Cognito sub UUID string is NOT and can
-//     never safely be coerced into. Those call sites are unmigrated
-//     (main.go currently discards the constructed CognitoProvider/
-//     authProv value entirely -- see `_ = authProv`), so this is not yet a
-//     live bug, but it IS an explicit unresolved hand-off: mapping a
-//     Cognito identity to a Mongo user document (and therefore a
-//     primitive.ObjectID) needs a real decision (e.g. look up/create a
-//     Mongo user keyed by Cognito sub, and store that Mongo ObjectID in
-//     the context instead of the raw sub) before any handler can be
-//     migrated to run behind CognitoProvider.AuthMiddleware. This
-//     provider stores the raw Cognito sub string under "userID" for now,
-//     which is a deliberate, documented, non-panicking placeholder -- NOT
-//     a drop-in replacement for auth.AuthMiddleware's context contract.
+//   - AuthMiddleware stores a primitive.ObjectID under the same "userID"
+//     context key auth.AuthMiddleware uses, because every consumer
+//     (internal/oauth, internal/filehandlers, internal/handlers) hard
+//     type-asserts to primitive.ObjectID. The ObjectID is derived
+//     deterministically from the Cognito `sub` (see subToObjectID), so the
+//     same Cognito user always maps to the same owner key without a lookup.
+//     ponytail: no users document is created for Cognito users, so anything
+//     that reads/updates the users collection by _id (Drive linking in
+//     internal/oauth) finds nothing. Upgrade path: FindOrCreateUserByCognitoSub
+//     on MetadataStore and put that user's real _id in the context instead.
 package authprovider
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -68,6 +61,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/cognitoidentityprovider"
 	cognitotypes "github.com/aws/aws-sdk-go-v2/service/cognitoidentityprovider/types"
 	"github.com/golang-jwt/jwt/v5"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 // minPasswordLength mirrors the client-side rule already enforced by
@@ -336,11 +330,7 @@ func (p *CognitoProvider) AuthMiddleware(next http.HandlerFunc) http.HandlerFunc
 			return
 		}
 
-		// NOTE: stores the raw Cognito sub (UUID string), NOT a
-		// primitive.ObjectID -- see package doc. Existing handlers that
-		// type-assert this context value to primitive.ObjectID are not
-		// compatible with this provider yet.
-		ctx := context.WithValue(r.Context(), "userID", sub)
+		ctx := context.WithValue(r.Context(), "userID", subToObjectID(sub))
 		next.ServeHTTP(w, r.WithContext(ctx))
 	}
 }
@@ -385,4 +375,13 @@ func isNotAuthorizedErr(err error) bool {
 func isUserNotFoundErr(err error) bool {
 	var e *cognitotypes.UserNotFoundException
 	return errors.As(err, &e)
+}
+
+// subToObjectID maps a Cognito sub (UUID string) to a stable
+// primitive.ObjectID: the first 12 bytes of SHA-256(sub). See package doc.
+func subToObjectID(sub string) primitive.ObjectID {
+	h := sha256.Sum256([]byte(sub))
+	var id primitive.ObjectID
+	copy(id[:], h[:12])
+	return id
 }

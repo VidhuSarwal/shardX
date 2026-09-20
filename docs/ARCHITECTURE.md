@@ -77,9 +77,11 @@ meant to be applied/destroyed per dev session. Runbook:
   `internal/fileprocessor` and `internal/auth` still call `internal/store`
   (Mongo) directly, so sessions/users live in Mongo while shard metadata
   goes to DynamoDB. `MONGO_URI` is therefore still required in every mode.
-- Cognito `AuthMiddleware` puts the Cognito `sub` (UUID) where handlers
-  expect a Mongo `ObjectID`; not wired into a live route yet.
+- Cognito `AuthMiddleware` derives the context `ObjectID` from
+  `sha256(sub)[:12]`; no `users` document exists for Cognito users, so
+  Drive linking (`oauth.DriveLinkHandler`) finds nothing for them.
 - S3 `GetSpace` returns an "unlimited" sentinel; no usage accounting.
-- No download/reconstruct endpoint exists on the backend
-  (`/api/files/download/*` in the web client has no server counterpart).
-- Nothing has been applied to a real AWS account; only mocks + LocalStack.
+- No download/reconstruct endpoint exists on the backend; the web client
+  has no download page either (only the key file can be fetched).
+- Applied to a real AWS account on 2026-09-20; S3 upload/retry, Cognito
+  signup/login and the DynamoDB store were verified live (`docs/TODO.md`).

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"SE/internal/auth"
 	"SE/internal/bootstrap"
 	"SE/internal/filehandlers"
 	"SE/internal/fileprocessor"
@@ -69,15 +68,6 @@ func main() {
 	filehandlers.InitStorageProvider(storageProvider)
 	filehandlers.InitRetryQueue(bootstrap.SelectRetryQueue(os.Getenv("SQS_QUEUE_URL")))
 
-	// NOTE: authProv is constructed here to prove the provider is
-	// selectable, but signup/login/AuthMiddleware below still call the
-	// concrete internal/auth package directly, and internal/oauth /
-	// internal/fileprocessor still call internal/store directly. Migrating
-	// those call sites is deferred until Cognito is wired into a live
-	// route. storageProvider is now routed through filehandlers
-	// (InitStorageProvider) so STORAGE_PROVIDER=s3 drives the pipeline.
-	_ = authProv
-
 	driveAccountsHandler := handlers.NewDriveAccountsHandler(metaStore)
 
 	// Setup routes
@@ -87,28 +77,28 @@ func main() {
 	mux.HandleFunc("/health", requireMethod("GET", healthCheckHandler))
 
 	// Authentication routes
-	mux.HandleFunc("/api/signup", requireMethod("POST", auth.SignupHandler))
-	mux.HandleFunc("/api/login", requireMethod("POST", auth.LoginHandler))
+	mux.HandleFunc("/api/signup", requireMethod("POST", authProv.Signup))
+	mux.HandleFunc("/api/login", requireMethod("POST", authProv.Login))
 
 	// Drive OAuth routes
-	mux.HandleFunc("/api/drive/link", auth.AuthMiddleware(requireMethod("GET", oauth.DriveLinkHandler)))
-	mux.HandleFunc("/api/drive/accounts", auth.AuthMiddleware(requireMethod("GET", driveAccountsHandler.ListDriveAccounts)))
-	mux.HandleFunc("/api/drive/space", auth.AuthMiddleware(requireMethod("GET", filehandlers.GetDriveSpacesHandler)))
+	mux.HandleFunc("/api/drive/link", authProv.AuthMiddleware(requireMethod("GET", oauth.DriveLinkHandler)))
+	mux.HandleFunc("/api/drive/accounts", authProv.AuthMiddleware(requireMethod("GET", driveAccountsHandler.ListDriveAccounts)))
+	mux.HandleFunc("/api/drive/space", authProv.AuthMiddleware(requireMethod("GET", filehandlers.GetDriveSpacesHandler)))
 
 	// File upload routes
-	mux.HandleFunc("/api/files/upload/initiate", auth.AuthMiddleware(requireMethod("POST", filehandlers.InitiateUploadHandler)))
-	mux.HandleFunc("/api/files/upload/chunk", auth.AuthMiddleware(requireMethod("POST", filehandlers.UploadChunkHandler)))
-	mux.HandleFunc("/api/files/upload/finalize", auth.AuthMiddleware(requireMethod("POST", filehandlers.FinalizeUploadHandler)))
-	mux.HandleFunc("/api/files/upload/status/", auth.AuthMiddleware(requireMethod("GET", filehandlers.GetUploadStatusHandler)))
-	mux.HandleFunc("/api/files/chunking/calculate", auth.AuthMiddleware(requireMethod("POST", filehandlers.CalculateChunkingHandler)))
-	mux.HandleFunc("/api/files/download-key/", auth.AuthMiddleware(requireMethod("GET", filehandlers.DownloadKeyFileHandler)))
+	mux.HandleFunc("/api/files/upload/initiate", authProv.AuthMiddleware(requireMethod("POST", filehandlers.InitiateUploadHandler)))
+	mux.HandleFunc("/api/files/upload/chunk", authProv.AuthMiddleware(requireMethod("POST", filehandlers.UploadChunkHandler)))
+	mux.HandleFunc("/api/files/upload/finalize", authProv.AuthMiddleware(requireMethod("POST", filehandlers.FinalizeUploadHandler)))
+	mux.HandleFunc("/api/files/upload/status/", authProv.AuthMiddleware(requireMethod("GET", filehandlers.GetUploadStatusHandler)))
+	mux.HandleFunc("/api/files/chunking/calculate", authProv.AuthMiddleware(requireMethod("POST", filehandlers.CalculateChunkingHandler)))
+	mux.HandleFunc("/api/files/download-key/", authProv.AuthMiddleware(requireMethod("GET", filehandlers.DownloadKeyFileHandler)))
 
 	// Integrity Engine: shard health score, shard placement, audit
 	// timeline ({session_id}/health, /shards, /timeline). Registered against the
 	// "/api/files/" prefix since the session ID sits in the middle of the
 	// path ("/api/files/{session_id}/health"); ServeMux's longest-prefix
 	// match means the more specific routes above still take precedence.
-	mux.HandleFunc("/api/files/", auth.AuthMiddleware(requireMethod("GET", filehandlers.GetFileHealthHandler)))
+	mux.HandleFunc("/api/files/", authProv.AuthMiddleware(requireMethod("GET", filehandlers.GetFileHealthHandler)))
 
 	// OAuth callback (no auth header; state validated via DB)
 	mux.HandleFunc("/oauth2/callback", requireMethod("GET", oauth.OauthCallbackHandler))
@@ -120,6 +110,9 @@ func main() {
 	})
 
 	addr := ":5555"
+	if p := os.Getenv("PORT"); p != "" {
+		addr = ":" + p
+	}
 	fmt.Printf("Starting server on %s\n", addr)
 	// Apply middlewares: CORS (allow all for now) then Logger
 	handler := middleware.CORS([]string{"*"})(mux)

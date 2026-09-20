@@ -7,6 +7,7 @@ import (
 	"crypto/rsa"
 	"encoding/base64"
 	"encoding/json"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -643,9 +644,12 @@ func TestCognitoProvider_AuthMiddleware_ValidToken(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", rec.Code)
 	}
-	sub, ok := gotUserID.(string)
-	if !ok || sub != "11111111-2222-3333-4444-555555555555" {
-		t.Fatalf("expected the Cognito sub string to be set on context under \"userID\", got %#v", gotUserID)
+	// Handlers hard type-assert to primitive.ObjectID; the value must be
+	// the deterministic mapping of the sub so the same user always gets
+	// the same owner key.
+	id, ok := gotUserID.(primitive.ObjectID)
+	if !ok || id != subToObjectID("11111111-2222-3333-4444-555555555555") || id.IsZero() {
+		t.Fatalf("expected ObjectID derived from the Cognito sub under \"userID\", got %#v", gotUserID)
 	}
 }
 
