@@ -1,8 +1,8 @@
 package oauth
 
 import (
+	"SE/internal/metadatastore"
 	"SE/internal/models"
-	"SE/internal/store"
 	"context"
 	"crypto/aes"
 	"crypto/cipher"
@@ -73,7 +73,7 @@ func DriveLinkHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// store state -> user
-	if err := store.InsertOAuthState(r.Context(), &models.OAuthState{
+	if err := metadatastore.Active.InsertOAuthState(r.Context(), &models.OAuthState{
 		State:    state,
 		UserID:   uid,
 		Provider: "google",
@@ -118,7 +118,7 @@ func OauthCallbackHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// lookup and delete state
-	stored, err := store.FindAndDeleteState(r.Context(), state)
+	stored, err := metadatastore.Active.FindAndDeleteState(r.Context(), state)
 	if err != nil {
 		log.Printf("Error finding state: %v", err)
 		http.Error(w, "server error", http.StatusInternalServerError)
@@ -164,7 +164,7 @@ func OauthCallbackHandler(w http.ResponseWriter, r *http.Request) {
 		EncryptedToken: enc,
 	}
 
-	if err := store.AddDriveAccountToUser(r.Context(), stored.UserID, acct); err != nil {
+	if err := metadatastore.Active.AddDriveAccountToUser(r.Context(), stored.UserID, acct); err != nil {
 		log.Printf("Failed to save drive account: %v", err)
 		http.Error(w, "db save failed", http.StatusInternalServerError)
 		return

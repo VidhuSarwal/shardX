@@ -38,18 +38,20 @@
 //     type-asserts to primitive.ObjectID. The ObjectID is derived
 //     deterministically from the Cognito `sub` (see subToObjectID), so the
 //     same Cognito user always maps to the same owner key without a lookup.
-//     ponytail: no users document is created for Cognito users, so anything
-//     that reads/updates the users collection by _id (Drive linking in
-//     internal/oauth) finds nothing. Upgrade path: FindOrCreateUserByCognitoSub
-//     on MetadataStore and put that user's real _id in the context instead.
+//     Login upserts a users document under that same _id (via
+//     metadatastore.Active) so Drive linking and anything else keyed on the
+//     users collection works for Cognito users too.
 package authprovider
 
 import (
+	"SE/internal/metadatastore"
+	"SE/internal/models"
 	"context"
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"strings"
 	"sync"
@@ -261,8 +263,31 @@ func (p *CognitoProvider) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	idToken := *out.AuthenticationResult.IdToken
+	if sub, err := p.ValidateToken(idToken); err == nil {
+		ensureUser(ctx, subToObjectID(sub), email)
+	}
+
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(cognitoLoginResp{Token: *out.AuthenticationResult.IdToken})
+	json.NewEncoder(w).Encode(cognitoLoginResp{Token: idToken})
+}
+
+// ensureUser creates the users document for a Cognito login on first sight,
+// with _id = subToObjectID(sub) so AuthMiddleware's context ID resolves to
+// it. Best effort: a store failure is logged, not surfaced, because the
+// login itself succeeded. ponytail: a pre-existing user with the same email
+// but a different _id (created via AUTH_PROVIDER=custom) is left alone and
+// won't be reachable from Cognito sessions; migrate by hand if that comes up.
+func ensureUser(ctx context.Context, id primitive.ObjectID, email string) {
+	if metadatastore.Active == nil {
+		return
+	}
+	if u, err := metadatastore.Active.FindUserByEmail(ctx, email); err != nil || u != nil {
+		return
+	}
+	if err := metadatastore.Active.CreateUser(ctx, &models.User{ID: id, Email: email}); err != nil {
+		log.Printf("cognito: create users document for %s: %v", email, err)
+	}
 }
 
 // ValidateToken verifies a Cognito-issued ID token's signature (via the

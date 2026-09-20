@@ -10,7 +10,6 @@ import (
 	"SE/internal/orchestration"
 	"SE/internal/queue"
 	"SE/internal/storage"
-	"SE/internal/store"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -308,7 +307,7 @@ func GetUploadStatusHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get session - but DON'T validate ownership or expiry for status checks
-	session, err := store.GetUploadSession(r.Context(), sessionID)
+	session, err := metadatastore.Active.GetUploadSession(r.Context(), sessionID)
 	if err != nil {
 		http.Error(w, "failed to get session", http.StatusInternalServerError)
 		return
@@ -509,10 +508,10 @@ func processAndUploadFile(ctx context.Context, session *models.UploadSession, st
 		fileprocessor.UpdateSessionStatus(ctx, sessionID, "failed", 50, fmt.Sprintf("File splitting failed: %v", err))
 		return
 	}
-	var pendingPaths []string // chunk files left on disk for the retry worker
+	var pendingJobs []queue.RetryJob // failed chunks, enqueued once the key file exists
 	defer func() {
 		for _, path := range chunkPaths {
-			if !slices.Contains(pendingPaths, path) {
+			if !slices.ContainsFunc(pendingJobs, func(j queue.RetryJob) bool { return j.ChunkPath == path }) {
 				os.Remove(path)
 			}
 		}
@@ -543,7 +542,7 @@ func processAndUploadFile(ctx context.Context, session *models.UploadSession, st
 	} else {
 		// S3 (or any non-Drive) mode: failed chunks go to the retry queue
 		// and their files are kept on disk for cmd/shardworker.
-		chunkMetadata, pendingPaths, err = uploadChunksViaProvider(ctx, sessionID.Hex(), chunkPaths, plan, progressCb)
+		chunkMetadata, pendingJobs, err = uploadChunksViaProvider(ctx, sessionID.Hex(), chunkPaths, plan, progressCb)
 	}
 	if err != nil {
 		log.Printf("Upload failed: %v", err)
@@ -590,14 +589,23 @@ func processAndUploadFile(ctx context.Context, session *models.UploadSession, st
 	}
 
 	// Store key file path in session for download
-	store.UpdateSessionKeyFile(ctx, sessionID, keyFilePath)
+	metadatastore.Active.UpdateSessionKeyFile(ctx, sessionID, keyFilePath)
 
-	// Shards handed to the retry queue: the session stays "processing"
-	// until cmd/shardworker uploads them, patches their location into the
-	// key file, and marks the session complete.
-	if len(pendingPaths) > 0 {
-		log.Printf("Session %s waiting on %d queued shard retries", sessionID.Hex(), len(pendingPaths))
-		fileprocessor.UpdateSessionStatus(ctx, sessionID, "processing", 95, fmt.Sprintf("Waiting for %d shard(s) queued for retry...", len(pendingPaths)))
+	// Shards handed to the retry queue: enqueued only now, after the key
+	// file is persisted (the worker rejects jobs for sessions without one).
+	// The session stays "processing" until cmd/shardworker uploads them,
+	// patches their location into the key file, and marks it complete.
+	if len(pendingJobs) > 0 {
+		for _, job := range pendingJobs {
+			if qerr := retryQueue.Enqueue(ctx, job); qerr != nil {
+				log.Printf("Retry enqueue failed for session %s chunk %d: %v", sessionID.Hex(), job.ChunkID, qerr)
+				fileprocessor.UpdateSessionStatus(ctx, sessionID, "failed", 95, fmt.Sprintf("Upload failed: chunk %d could not be queued for retry: %v", job.ChunkID, qerr))
+				pendingJobs = nil // let the deferred cleanup remove the chunk files
+				return
+			}
+		}
+		log.Printf("Session %s waiting on %d queued shard retries", sessionID.Hex(), len(pendingJobs))
+		fileprocessor.UpdateSessionStatus(ctx, sessionID, "processing", 95, fmt.Sprintf("Waiting for %d shard(s) queued for retry...", len(pendingJobs)))
 		return
 	}
 
@@ -620,7 +628,7 @@ func DownloadKeyFileHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get session
-	session, err := store.GetUploadSession(r.Context(), sessionID)
+	session, err := metadatastore.Active.GetUploadSession(r.Context(), sessionID)
 	if err != nil || session == nil {
 		http.Error(w, "session not found", http.StatusNotFound)
 		return

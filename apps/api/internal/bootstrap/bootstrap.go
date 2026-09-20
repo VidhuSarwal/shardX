@@ -26,7 +26,8 @@ func SelectMetadataStore(provider string) metadatastore.MetadataStore {
 	}
 	switch provider {
 	case "mongo":
-		return metadatastore.NewMongoStore()
+		metadatastore.Active = metadatastore.NewMongoStore()
+		return metadatastore.Active
 	case "dynamodb":
 		tablePrefix := os.Getenv("DYNAMODB_TABLE_PREFIX")
 		if tablePrefix == "" {
@@ -38,6 +39,7 @@ func SelectMetadataStore(provider string) metadatastore.MetadataStore {
 		if err != nil {
 			log.Fatalf("init dynamodb store: %v", err)
 		}
+		metadatastore.Active = s
 		return s
 	default:
 		log.Fatalf("DB_PROVIDER %q not yet implemented, coming in a later phase", provider)
