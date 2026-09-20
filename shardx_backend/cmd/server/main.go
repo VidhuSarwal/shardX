@@ -103,7 +103,8 @@ func main() {
 	mux.HandleFunc("/api/files/chunking/calculate", auth.AuthMiddleware(requireMethod("POST", filehandlers.CalculateChunkingHandler)))
 	mux.HandleFunc("/api/files/download-key/", auth.AuthMiddleware(requireMethod("GET", filehandlers.DownloadKeyFileHandler)))
 
-	// Integrity Engine: shard health score. Registered against the
+	// Integrity Engine: shard health score, shard placement, audit
+	// timeline ({session_id}/health, /shards, /timeline). Registered against the
 	// "/api/files/" prefix since the session ID sits in the middle of the
 	// path ("/api/files/{session_id}/health"); ServeMux's longest-prefix
 	// match means the more specific routes above still take precedence.

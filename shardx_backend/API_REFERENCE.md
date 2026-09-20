@@ -243,6 +243,50 @@ Get available space on all linked Google Drive accounts.
 
 ---
 
+### 7. File Health (Integrity Engine)
+
+**Endpoint:** `GET /api/files/{session_id}/health`
+
+Presence/status-based shard health score for a finished upload (not a re-hash).
+
+```json
+{
+  "file_id": "68f1...",
+  "health_percentage": 100,
+  "shards_available": 3,
+  "shards_total": 3,
+  "integrity_checks_passed": 3,
+  "integrity_checks_total": 3,
+  "corruption_events": 0
+}
+```
+
+### 8. Shard Placement
+
+**Endpoint:** `GET /api/files/{session_id}/shards`
+
+Per-shard records sorted by `shard_id`. `bucket` is the drive account ID in
+Drive mode, or the S3 bucket (with `region`) in S3 mode. `status` is
+`verified`, `pending` (queued for retry), or `corrupted`.
+
+```json
+{ "file_id": "68f1...", "shards": [ { "shard_id": 1, "sha256": "...", "size": 5242880, "bucket": "...", "region": "us-east-1", "created_at": "...", "status": "verified" } ] }
+```
+
+### 9. Audit Timeline
+
+**Endpoint:** `GET /api/files/{session_id}/timeline`
+
+Chronological events derived from the session and shard records:
+`FILE_CREATED`, `SHARD_VERIFIED` / `SHARD_QUEUED_FOR_RETRY` / `SHARD_CORRUPTED`,
+then `FILE_HEALTHY` or `UPLOAD_FAILED`.
+
+```json
+{ "file_id": "68f1...", "events": [ { "type": "FILE_CREATED", "at": "2026-01-01T00:00:00Z", "detail": { "filename": "a.bin", "total_size": 1024 } } ] }
+```
+
+---
+
 ## Complete Upload Flow Example
 
 ```javascript

@@ -181,3 +181,65 @@ func TestGetFileHealthHandler_NilMetaStoreReturns500(t *testing.T) {
 		t.Fatalf("expected 500, got %d: %s", rw.Code, rw.Body.String())
 	}
 }
+
+func TestGetFileHealthHandler_ShardsAndTimeline(t *testing.T) {
+	origStore := metaStore
+	defer func() { metaStore = origStore }()
+
+	userID := primitive.NewObjectID()
+	sessionID := primitive.NewObjectID()
+	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	t1 := t0.Add(time.Minute)
+	metaStore = &fakeHealthStore{
+		session: &models.UploadSession{ID: sessionID, UserID: userID, Status: "complete", OriginalFilename: "a.bin", CreatedAt: t0, CompletedAt: &t1},
+		shards: []models.ShardRecord{
+			{ShardID: 2, SHA256: "bbb", Status: "pending", CreatedAt: t0.Add(20 * time.Second), Bucket: "bkt"},
+			{ShardID: 1, SHA256: "aaa", Status: "verified", CreatedAt: t0.Add(10 * time.Second), Bucket: "bkt"},
+		},
+	}
+
+	req := withUserID(httptest.NewRequest(http.MethodGet, "/api/files/"+sessionID.Hex()+"/shards", nil), userID)
+	rr := httptest.NewRecorder()
+	GetFileHealthHandler(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("shards status = %d: %s", rr.Code, rr.Body.String())
+	}
+	var shardsResp struct {
+		Shards []models.ShardRecord `json:"shards"`
+	}
+	json.Unmarshal(rr.Body.Bytes(), &shardsResp)
+	if len(shardsResp.Shards) != 2 || shardsResp.Shards[0].ShardID != 1 {
+		t.Fatalf("shards not sorted by id: %+v", shardsResp.Shards)
+	}
+
+	req = withUserID(httptest.NewRequest(http.MethodGet, "/api/files/"+sessionID.Hex()+"/timeline", nil), userID)
+	rr = httptest.NewRecorder()
+	GetFileHealthHandler(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("timeline status = %d: %s", rr.Code, rr.Body.String())
+	}
+	var tl struct {
+		Events []TimelineEvent `json:"events"`
+	}
+	json.Unmarshal(rr.Body.Bytes(), &tl)
+	got := make([]string, 0, len(tl.Events))
+	for _, e := range tl.Events {
+		got = append(got, e.Type)
+	}
+	want := []string{"FILE_CREATED", "SHARD_VERIFIED", "SHARD_QUEUED_FOR_RETRY", "FILE_HEALTHY"}
+	if len(got) != len(want) {
+		t.Fatalf("events = %v", got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("events = %v, want %v", got, want)
+		}
+	}
+
+	req = withUserID(httptest.NewRequest(http.MethodGet, "/api/files/"+sessionID.Hex()+"/nope", nil), userID)
+	rr = httptest.NewRecorder()
+	GetFileHealthHandler(rr, req)
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("unknown action status = %d", rr.Code)
+	}
+}
