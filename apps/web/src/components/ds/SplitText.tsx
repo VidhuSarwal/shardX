@@ -20,7 +20,7 @@ export const SplitText = ({ text, by = 'char', className, stagger = 0.02, trigge
     <span ref={ref} className={className} aria-label={text}>
       {parts.map((p, i) => (
         <span key={i} className="inline-block overflow-hidden align-bottom" aria-hidden>
-          <span data-part className="inline-block will-change-transform">{p === ' ' ? ' ' : p}{by === 'word' && i < parts.length - 1 ? ' ' : ''}</span>
+          <span data-part className="inline-block will-change-transform">{p === ' ' ? ' ' : p}{by === 'word' && i < parts.length - 1 ? ' ' : ''}</span>
         </span>
       ))}
     </span>
