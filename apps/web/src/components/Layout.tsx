@@ -4,7 +4,6 @@ import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { Cloud, Files, User, LogOut } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { ThemeToggle } from '@/components/ThemeToggle';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -64,9 +63,6 @@ export const Layout = ({ children }: LayoutProps) => {
                     Profile
                   </Link>
                 </Button>
-
-                {/* Theme toggle */}
-                <ThemeToggle />
 
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>

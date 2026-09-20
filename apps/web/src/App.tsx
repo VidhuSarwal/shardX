@@ -10,31 +10,28 @@ import FileDetail from "./pages/FileDetail";
 import Profile from "./pages/Profile";
 import OAuthFinished from "./pages/OAuthFinished";
 import NotFound from "./pages/NotFound";
-import { ThemeProvider } from "@/components/theme-provider";
 
 const queryClient = new QueryClient();
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
-    <ThemeProvider>
-      <TooltipProvider>
-        <AuthProvider>
-          <Sonner />
-          <BrowserRouter>
-            <Routes>
-              <Route path="/" element={<Navigate to="/files" replace />} />
-              <Route path="/login" element={<Login />} />
-              <Route path="/signup" element={<Signup />} />
-              <Route path="/files" element={<Files />} />
-              <Route path="/files/:sessionId" element={<FileDetail />} />
-              <Route path="/profile" element={<Profile />} />
-              <Route path="/oauth/finished" element={<OAuthFinished />} />
-              <Route path="*" element={<NotFound />} />
-            </Routes>
-          </BrowserRouter>
-        </AuthProvider>
-      </TooltipProvider>
-    </ThemeProvider>
+    <TooltipProvider>
+      <AuthProvider>
+        <Sonner />
+        <BrowserRouter>
+          <Routes>
+            <Route path="/" element={<Navigate to="/files" replace />} />
+            <Route path="/login" element={<Login />} />
+            <Route path="/signup" element={<Signup />} />
+            <Route path="/files" element={<Files />} />
+            <Route path="/files/:sessionId" element={<FileDetail />} />
+            <Route path="/profile" element={<Profile />} />
+            <Route path="/oauth/finished" element={<OAuthFinished />} />
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </BrowserRouter>
+      </AuthProvider>
+    </TooltipProvider>
   </QueryClientProvider>
 );
 
