@@ -5,6 +5,7 @@ import (
 	"SE/internal/events"
 	"SE/internal/fileprocessor"
 	"SE/internal/models"
+	"SE/internal/orchestration"
 	"SE/internal/store"
 	"context"
 	"encoding/json"
@@ -30,6 +31,21 @@ var eventEmitter events.Emitter = events.NoopEmitter{}
 func InitEvents(e events.Emitter) {
 	if e != nil {
 		eventEmitter = e
+	}
+}
+
+// orchestrator starts a tracked Step Functions execution representing
+// an upload's lifecycle. Defaults to a no-op so Drive-mode/local
+// deployments without STATE_MACHINE_ARN configured see zero behavior
+// change. Set via InitOrchestrator from main.go at startup.
+var orchestrator orchestration.Orchestrator = orchestration.NoopOrchestrator{}
+
+// InitOrchestrator configures the orchestrator used by the
+// upload/finalize pipeline. Call once at startup before serving
+// requests.
+func InitOrchestrator(o orchestration.Orchestrator) {
+	if o != nil {
+		orchestrator = o
 	}
 }
 
@@ -324,6 +340,29 @@ func processAndUploadFile(ctx context.Context, session *models.UploadSession, st
 		// Schedule cleanup
 		fileprocessor.ScheduleCleanup(ctx, sessionID)
 	}()
+
+	// Start a tracked Step Functions execution for this upload's
+	// lifecycle. This is a no-op (empty ARN, nil error) unless
+	// main.go wired up a real SFNOrchestrator (STATE_MACHINE_ARN set),
+	// which today only happens for STORAGE_PROVIDER=s3 - Drive-mode
+	// runs always get the default NoopOrchestrator, so this call is
+	// harmless there. See internal/orchestration for why this only
+	// starts an execution (for tracking/visibility) rather than
+	// driving individual state transitions: the current ASL is built
+	// entirely of placeholder Pass states with no task tokens to
+	// report back to.
+	executionARN, err := orchestrator.StartUploadExecution(ctx, sessionID.Hex(), map[string]any{
+		"session_id": sessionID.Hex(),
+		"user_id":    userID.Hex(),
+		"filename":   session.OriginalFilename,
+		"total_size": session.TotalSize,
+		"strategy":   strategy,
+	})
+	if err != nil {
+		log.Printf("Failed to start orchestration execution for session %s: %v", sessionID.Hex(), err)
+	} else if executionARN != "" {
+		log.Printf("Started orchestration execution %s for session %s", executionARN, sessionID.Hex())
+	}
 
 	// Step 1: Obfuscate file (10%)
 	log.Printf("Starting obfuscation for session %s", sessionID.Hex())

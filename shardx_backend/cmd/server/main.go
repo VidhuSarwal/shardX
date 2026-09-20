@@ -10,6 +10,7 @@ import (
 	"SE/internal/metadatastore"
 	"SE/internal/middleware"
 	"SE/internal/oauth"
+	"SE/internal/orchestration"
 	"SE/internal/storage"
 	"SE/internal/store"
 	"context"
@@ -67,6 +68,7 @@ func main() {
 	storageProvider := selectStorageProvider(os.Getenv("STORAGE_PROVIDER"))
 	authProv := selectAuthProvider(os.Getenv("AUTH_PROVIDER"))
 	filehandlers.InitEvents(selectEventEmitter(os.Getenv("EVENT_BUS_NAME")))
+	filehandlers.InitOrchestrator(selectOrchestrator(os.Getenv("STATE_MACHINE_ARN")))
 
 	// NOTE: storageProvider and authProv are constructed here to prove the
 	// providers are selectable and usable, but most existing handlers
@@ -243,4 +245,21 @@ func selectEventEmitter(busName string) events.Emitter {
 		log.Fatalf("init eventbridge emitter: %v", err)
 	}
 	return e
+}
+
+// selectOrchestrator picks an orchestration.Orchestrator based on the
+// STATE_MACHINE_ARN env var. Unset means no state machine configured:
+// return a no-op orchestrator so local dev / Drive-mode runs without
+// AWS access see zero behavior change.
+func selectOrchestrator(stateMachineARN string) orchestration.Orchestrator {
+	if stateMachineARN == "" {
+		return orchestration.NoopOrchestrator{}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	o, err := orchestration.NewSFNOrchestrator(ctx, stateMachineARN)
+	if err != nil {
+		log.Fatalf("init step functions orchestrator: %v", err)
+	}
+	return o
 }
