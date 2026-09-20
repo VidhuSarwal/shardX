@@ -82,18 +82,15 @@ shard records.
 
 - [x] S3 mode: `cmd/server` + `cmd/shardworker` with `STORAGE_PROVIDER=s3 SQS_QUEUE_URL=…`. Real upload → `complete`, `/health` 100%, `/shards` `verified`, object in S3 with SSE-KMS, Step Functions execution `SUCCEEDED`. Retry path verified by pointing the server at a bogus `S3_KMS_KEY_ID`: chunk enqueued (`pending`, `SHARD_QUEUED_FOR_RETRY`), worker re-uploaded, patched key file, session `complete`, queue + DLQ empty.
 - [x] Cognito mode: `AUTH_PROVIDER=cognito` now actually routes signup/login/middleware through the provider (it was constructed and discarded before). Live signup → CONFIRMED user (in-code `AdminConfirmSignUp`, no manual step), login → RS256 ID token, authed routes 200, tampered token 401. Middleware maps `sub` → deterministic `ObjectID` (`subToObjectID`), see known gaps.
-- [x] DynamoDB store: all 5 tables match the code's schema; all 20 `MetadataStore` methods pass against the real tables. `DB_PROVIDER=dynamodb` through HTTP is only partially effective — see known gaps.
+- [x] DynamoDB store: all 5 tables match the code's schema; all 20 `MetadataStore` methods pass against the real tables. `DB_PROVIDER=dynamodb AUTH_PROVIDER=cognito` verified through HTTP: signup → login → upload → `complete`, `/health` 100%, `/timeline` full; session + user rows land in DynamoDB (Mongo untouched, `MONGO_URI` no longer required in that mode).
 - [ ] Drive-mode regression run (`tester2.sh`) — blocked on real `GOOGLE_CLIENT_ID/SECRET` (only placeholders in `.env`).
 
 ## Known gaps / honest limitations to carry forward
 
-- Cognito users have no `users` document: `AuthMiddleware` derives the context `ObjectID` from `sha256(sub)[:12]`, which is enough for uploads/listing but `oauth.DriveLinkHandler` (update by `_id`) finds nothing. Proper fix: `FindOrCreateUserByCognitoSub` on `MetadataStore` and put the real `_id` in the context. Also `email_verified` stays `false` after `AdminConfirmSignUp`, so Cognito forgot-password won't work for these users.
-- `DB_PROVIDER=dynamodb` is half-wired: `internal/auth` (users), `internal/fileprocessor/session.go` (upload sessions), `internal/oauth` (states/drive accounts) and `filehandlers.GetUploadStatusHandler` still call `internal/store` (Mongo) directly — 18 call sites in 4 files. Consequence: in dynamodb mode shard rows land in DynamoDB but sessions/users land in Mongo, so `/api/files/{id}/health|shards|timeline` 404 ("session not found"). Routing those call sites through `metaStore` is the remaining work for a real DynamoDB cutover.
-- Retry worker race: the retry job is enqueued before the key file is written, so the first SQS delivery always fails ("session has no key file yet") and burns one of 5 receives + a 60 s visibility delay. Fix: enqueue after `UpdateSessionKeyFile` in `processAndUploadFile`.
+- Cognito login upserts a `users` document with `_id = sha256(sub)[:12]` (same value `AuthMiddleware` puts in the context), so Drive linking works. A pre-existing custom-auth user with the same email but a different `_id` is not merged. `email_verified` stays `false` after `AdminConfirmSignUp`, so Cognito forgot-password won't work for these users.
 - `UPLOAD_TEMP_DIR` is not session-scoped: chunk/key files for two concurrent sessions with the same filename clobber each other (pre-existing in `internal/fileprocessor`).
 - With one S3 "drive", every strategy yields exactly one shard per file.
 - `shardx-deployer` lacks `dynamodb:ListTables` (per-table ops work).
 - S3 `GetSpace` returns an unlimited sentinel, not real usage — real usage should come from DynamoDB-tracked logical size later.
 - Step Functions execution ARic is logged, not persisted on `UploadSession` (no field exists for it yet).
 - Integrity health check is presence/status-based, not a re-hash of shard bytes.
-- Only the S3 storage path has been exercised against real AWS (Mongo + custom JWT still in front of it). DynamoDB store and Cognito auth have not been run live.
