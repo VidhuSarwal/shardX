@@ -29,7 +29,7 @@ A **Google Drive backend** is also included for running without an AWS account: 
                          ┌────────────────────────────── AWS ──────────────────────────────┐
   React (Vite)           │                                                                  │
   ┌────────────┐ chunks  │  Go API ──▶ obfuscate ──▶ split ──▶ S3 (SSE-KMS CMK)             │
-  │ /  /guide  │         │    │                       │         <session>/chunk_NNN.2xpfm  │
+  │ /  /guide  │         │    │                       │                                    │
   │ /files     │────────▶│    │                       │         <session>/chunk_NNN.2xpfm  │
   │ /files/:id │  poll   │    │                       ├──▶ DynamoDB  shard sha256/size/status│
   │ /profile   │◀────────│    │                       ├──▶ EventBridge  FILE_CREATED,         │
