@@ -7,7 +7,6 @@ import (
 	"SE/internal/handlers"
 	"SE/internal/middleware"
 	"SE/internal/oauth"
-	"SE/internal/store"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -26,24 +25,30 @@ func main() {
 	}
 
 	// Check required env vars
-	required := []string{"MONGO_URI", "JWT_SECRET", "TOKEN_ENC_KEY", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "BASE_URL"}
+	required := []string{"JWT_SECRET", "TOKEN_ENC_KEY", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "BASE_URL"}
+	if os.Getenv("DB_PROVIDER") != "dynamodb" {
+		required = append(required, "MONGO_URI")
+	}
 	for _, k := range required {
 		if os.Getenv(k) == "" {
 			log.Fatalf("env %s is required", k)
 		}
 	}
 
-	// Initialize store (Mongo)
+	// Initialize the metadata store (Mongo by default, DynamoDB when
+	// DB_PROVIDER=dynamodb). Every package that touches users, sessions,
+	// oauth state or shards goes through metadatastore.Active.
+	metaStore := bootstrap.SelectMetadataStore(os.Getenv("DB_PROVIDER"))
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	if err := store.InitStore(ctx); err != nil {
+	if err := metaStore.InitStore(ctx); err != nil {
 		log.Fatalf("init store: %v", err)
 	}
 	defer func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		if err := store.DisconnectStore(ctx); err != nil {
+		if err := metaStore.DisconnectStore(ctx); err != nil {
 			log.Printf("disconnect store: %v", err)
 		}
 	}()
@@ -59,7 +64,6 @@ func main() {
 	// implementations today (all thin wrappers around the existing
 	// concrete packages, unchanged behavior). Additional providers (e.g.
 	// S3, DynamoDB, Cognito) will be added in later phases.
-	metaStore := bootstrap.SelectMetadataStore(os.Getenv("DB_PROVIDER"))
 	storageProvider := bootstrap.SelectStorageProvider(os.Getenv("STORAGE_PROVIDER"))
 	authProv := bootstrap.SelectAuthProvider(os.Getenv("AUTH_PROVIDER"))
 	filehandlers.InitEvents(bootstrap.SelectEventEmitter(os.Getenv("EVENT_BUS_NAME")))

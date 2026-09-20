@@ -82,11 +82,11 @@ func TestUploadChunksViaProvider_FailedChunkIsQueuedNotFatal(t *testing.T) {
 	if meta[1].Checksum == "" {
 		t.Fatal("checksum must be computed even for queued chunk")
 	}
-	if len(pending) != 1 || pending[0] != paths[1] {
-		t.Fatalf("pending = %v", pending)
+	if len(pending) != 1 || pending[0].ChunkID != 2 || pending[0].ChunkPath != paths[1] || pending[0].Target != "sess" {
+		t.Fatalf("pending = %+v", pending)
 	}
-	if len(fq.jobs) != 1 || fq.jobs[0].ChunkID != 2 || fq.jobs[0].ChunkPath != paths[1] || fq.jobs[0].Target != "sess" {
-		t.Fatalf("jobs = %+v", fq.jobs)
+	if len(fq.jobs) != 0 {
+		t.Fatalf("jobs must not be enqueued before the key file exists, got %+v", fq.jobs)
 	}
 
 	recs := chunkMetadataToShardRecords(meta)

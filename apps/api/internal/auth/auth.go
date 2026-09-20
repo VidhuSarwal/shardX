@@ -1,8 +1,8 @@
 package auth
 
 import (
+	"SE/internal/metadatastore"
 	"SE/internal/models"
-	"SE/internal/store"
 	"context"
 	"encoding/json"
 	"errors"
@@ -47,7 +47,7 @@ func SignupHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	existing, err := store.FindUserByEmail(ctx, req.Email)
+	existing, err := metadatastore.Active.FindUserByEmail(ctx, req.Email)
 	if err != nil {
 		http.Error(w, "server error", http.StatusInternalServerError)
 		return
@@ -69,7 +69,7 @@ func SignupHandler(w http.ResponseWriter, r *http.Request) {
 		DriveAccounts: []models.DriveAccount{},
 	}
 
-	if err := store.CreateUser(ctx, u); err != nil {
+	if err := metadatastore.Active.CreateUser(ctx, u); err != nil {
 		http.Error(w, "create user failed", http.StatusInternalServerError)
 		return
 	}
@@ -87,7 +87,7 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	u, err := store.FindUserByEmail(ctx, strings.ToLower(strings.TrimSpace(req.Email)))
+	u, err := metadatastore.Active.FindUserByEmail(ctx, strings.ToLower(strings.TrimSpace(req.Email)))
 	if err != nil {
 		http.Error(w, "server error", http.StatusInternalServerError)
 		return

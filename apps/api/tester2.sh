@@ -9,7 +9,7 @@ CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
 # Configuration
-BASE_URL="http://localhost:8080"
+BASE_URL="${BASE_URL:-http://localhost:5555}"
 TEST_FILE_SIZE=$((50 * 1024 * 1024)) # 500 MB
 CHUNK_SIZE=$((10 * 1024 * 1024)) # 10 MB chunks
 

@@ -3,7 +3,7 @@
 # API Testing Script for Drive Backend
 # Tests all routes with cURL
 
-BASE_URL="http://localhost:8080"
+BASE_URL="${BASE_URL:-http://localhost:5555}"
 EMAIL="testuser@example.com"
 PASSWORD="testpass123"
 TOKEN=""
