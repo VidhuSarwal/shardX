@@ -72,3 +72,26 @@ output "dynamodb_table_prefix" {
   description = "Value for DYNAMODB_TABLE_PREFIX in the Go backend (.env)."
   value       = module.storage.dynamodb_table_prefix
 }
+
+output "app_url" {
+  description = "Public HTTPS URL for the web app and API (CloudFront)."
+  value       = module.compute.app_url
+}
+
+output "web_bucket_name" {
+  description = "S3 bucket that deploy/deploy.sh syncs the built web app into."
+  value       = module.compute.web_bucket_name
+}
+
+output "cloudfront_distribution_id" {
+  value = module.compute.distribution_id
+}
+
+output "host_instance_id" {
+  description = "EC2 instance running api + shardworker (SSM Session Manager, no SSH)."
+  value       = module.compute.instance_id
+}
+
+output "aws_region" {
+  value = var.aws_region
+}

@@ -67,7 +67,18 @@ Root module applies, in order: `budget` (AWS Budget + SNS), `storage`
 SQS + DLQ, Step Functions placeholder), `identity` (Cognito pool/client,
 `api-role`, `shard-worker-role`, `security-worker-role`, scoped to the
 bucket/tables/queue), `observability` (CloudWatch log group + DLQ alarm,
-CloudTrail). `search/` is a separate root (OpenSearch `t3.small.search`)
+CloudTrail). `compute` (added after Phase 1) provisions the runtime: an EC2
+`t3.small` in the default VPC running `deploy/docker-compose.yml` (api +
+shardworker, shared `/data/uploads` volume; no database container) with an instance role
+that unions the api/worker policies plus Cognito/EventBridge/Step Functions,
+port 80 open only to CloudFront's origin-facing prefix list, no SSH (SSM);
+a private S3 web bucket with OAC; and one CloudFront distribution — default
+behavior → S3 (SPA fallback to `index.html`), `/api/*`, `/oauth2/*`,
+`/health` → the host. The app `.env` is an SSM SecureString
+(`/shardx/app-env`) rendered by Terraform, which the host polls for at boot
+because it embeds the CloudFront domain. `deploy/deploy.sh` runs apply,
+builds/syncs the web app, and triggers `shardx-redeploy` over SSM.
+`search/` is a separate root (OpenSearch `t3.small.search`)
 meant to be applied/destroyed per dev session. Runbook:
 `infrastructure/terraform/README.md`.
 
