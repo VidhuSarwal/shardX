@@ -2,11 +2,14 @@ package main
 
 import (
 	"SE/internal/auth"
+	"SE/internal/authprovider"
 	"SE/internal/filehandlers"
 	"SE/internal/fileprocessor"
 	"SE/internal/handlers"
+	"SE/internal/metadatastore"
 	"SE/internal/middleware"
 	"SE/internal/oauth"
+	"SE/internal/storage"
 	"SE/internal/store"
 	"context"
 	"encoding/json"
@@ -54,6 +57,31 @@ func main() {
 	// Initialize file processor config
 	fileprocessor.InitFileConfig()
 
+	// Select provider implementations based on env vars. Group 0 of the
+	// provider-interface migration: only "drive"/"mongo"/"custom" have real
+	// implementations today (all thin wrappers around the existing
+	// concrete packages, unchanged behavior). Additional providers (e.g.
+	// S3, DynamoDB, Cognito) will be added in later phases.
+	metaStore := selectMetadataStore(os.Getenv("DB_PROVIDER"))
+	storageProvider := selectStorageProvider(os.Getenv("STORAGE_PROVIDER"))
+	authProv := selectAuthProvider(os.Getenv("AUTH_PROVIDER"))
+
+	// NOTE: storageProvider and authProv are constructed here to prove the
+	// providers are selectable and usable, but most existing handlers
+	// (internal/filehandlers, internal/oauth, internal/fileprocessor,
+	// mux route registration for signup/login/AuthMiddleware below) still
+	// call the concrete internal/drivemanager, internal/store, and
+	// internal/auth packages directly. Migrating every call site to the
+	// interfaces was judged too risky for this pure-refactor phase; it is
+	// deferred to when real alternative implementations (S3/DynamoDB/
+	// Cognito) land and there is a concrete reason to route through the
+	// interface everywhere. handlers.DriveAccountsHandler has been
+	// migrated to demonstrate the pattern end-to-end.
+	_ = storageProvider
+	_ = authProv
+
+	driveAccountsHandler := handlers.NewDriveAccountsHandler(metaStore)
+
 	// Setup routes
 	mux := http.NewServeMux()
 
@@ -66,7 +94,7 @@ func main() {
 
 	// Drive OAuth routes
 	mux.HandleFunc("/api/drive/link", auth.AuthMiddleware(requireMethod("GET", oauth.DriveLinkHandler)))
-	mux.HandleFunc("/api/drive/accounts", auth.AuthMiddleware(requireMethod("GET", handlers.ListDriveAccountsHandler)))
+	mux.HandleFunc("/api/drive/accounts", auth.AuthMiddleware(requireMethod("GET", driveAccountsHandler.ListDriveAccounts)))
 	mux.HandleFunc("/api/drive/space", auth.AuthMiddleware(requireMethod("GET", filehandlers.GetDriveSpacesHandler)))
 
 	// File upload routes
@@ -116,4 +144,47 @@ func requireMethod(verb string, h http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
- 
+// selectMetadataStore picks a metadatastore.MetadataStore implementation
+// based on the DB_PROVIDER env var. Defaults to "mongo" if unset.
+func selectMetadataStore(provider string) metadatastore.MetadataStore {
+	if provider == "" {
+		provider = "mongo"
+	}
+	switch provider {
+	case "mongo":
+		return metadatastore.NewMongoStore()
+	default:
+		log.Fatalf("DB_PROVIDER %q not yet implemented, coming in a later phase", provider)
+		return nil
+	}
+}
+
+// selectStorageProvider picks a storage.StorageProvider implementation
+// based on the STORAGE_PROVIDER env var. Defaults to "drive" if unset.
+func selectStorageProvider(provider string) storage.StorageProvider {
+	if provider == "" {
+		provider = "drive"
+	}
+	switch provider {
+	case "drive":
+		return storage.NewDriveProvider()
+	default:
+		log.Fatalf("STORAGE_PROVIDER %q not yet implemented, coming in a later phase", provider)
+		return nil
+	}
+}
+
+// selectAuthProvider picks an authprovider.AuthProvider implementation
+// based on the AUTH_PROVIDER env var. Defaults to "custom" if unset.
+func selectAuthProvider(provider string) authprovider.AuthProvider {
+	if provider == "" {
+		provider = "custom"
+	}
+	switch provider {
+	case "custom":
+		return authprovider.NewCustomProvider()
+	default:
+		log.Fatalf("AUTH_PROVIDER %q not yet implemented, coming in a later phase", provider)
+		return nil
+	}
+}

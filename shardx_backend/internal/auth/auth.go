@@ -122,6 +122,15 @@ func generateJWT(userID string) (string, error) {
 	return t.SignedString(jwtSecret)
 }
 
+// ValidateToken parses and validates a JWT, returning the userID (sub claim)
+// it was issued for. It is a thin exported wrapper around parseJWT, added so
+// that internal/authprovider can expose token validation without
+// reimplementing JWT parsing logic. Behavior is identical to what
+// AuthMiddleware already does internally.
+func ValidateToken(tokenStr string) (string, error) {
+	return parseJWT(tokenStr)
+}
+
 // parse and validate JWT, return userID
 func parseJWT(tokenStr string) (string, error) {
 	tkn, err := jwt.Parse(tokenStr, func(t *jwt.Token) (interface{}, error) {
