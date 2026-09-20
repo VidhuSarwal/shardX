@@ -75,23 +75,16 @@ data "aws_iam_policy_document" "api_role_policy" {
       )
     }
   }
-}
 
-data "aws_iam_policy_document" "api_role_sqs" {
-  count = var.retry_queue_arn != "" ? 1 : 0
-  statement {
-    sid       = "SqsEnqueueRetries"
-    effect    = "Allow"
-    actions   = ["sqs:SendMessage", "sqs:GetQueueUrl"]
-    resources = [var.retry_queue_arn]
+  dynamic "statement" {
+    for_each = var.retry_queue_arn != "" ? [1] : []
+    content {
+      sid       = "SqsEnqueueRetries"
+      effect    = "Allow"
+      actions   = ["sqs:SendMessage", "sqs:GetQueueUrl"]
+      resources = [var.retry_queue_arn]
+    }
   }
-}
-
-resource "aws_iam_role_policy" "api_role_sqs" {
-  count  = var.retry_queue_arn != "" ? 1 : 0
-  name   = "${var.project_name}-api-role-sqs"
-  role   = aws_iam_role.api_role.id
-  policy = data.aws_iam_policy_document.api_role_sqs[0].json
 }
 
 resource "aws_iam_role_policy" "api_role_policy" {
