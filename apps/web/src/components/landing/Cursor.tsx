@@ -16,6 +16,8 @@ export const Cursor = () => {
     document.documentElement.classList.add('cursor-none');
     return () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseover', over); document.documentElement.classList.remove('cursor-none'); };
   }, [reduced]);
+  const eligible = !reduced && typeof window !== 'undefined' && window.matchMedia('(pointer: fine)').matches;
+  if (!eligible) return null;
   return (
     <>
       <div ref={dot} aria-hidden className="pointer-events-none fixed left-0 top-0 z-[95] h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary mix-blend-difference" />

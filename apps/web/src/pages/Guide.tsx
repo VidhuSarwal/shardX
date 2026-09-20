@@ -29,7 +29,7 @@ const Guide = () => {
         </aside>
         <article className="prose-invert max-w-none space-y-20">
           {GUIDE_SECTIONS.map((s, i) => (
-            <Reveal key={s.id} as="section" className="scroll-mt-32">
+            <Reveal key={s.id} as="div" className="scroll-mt-32">
               <section id={s.id} aria-labelledby={`${s.id}-h`}>
                 <p className="eyebrow mb-3">{String(i + 1).padStart(2, '0')}</p>
                 <h2 id={`${s.id}-h`} className="mb-6 text-3xl font-semibold tracking-tight">{s.title}</h2>
