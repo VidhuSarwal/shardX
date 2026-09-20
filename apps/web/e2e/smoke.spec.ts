@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 
 test('landing reveals all chapters and CTA', async ({ page }) => {
   await page.goto('/');
-  await expect(page.getByRole('heading', { level: 2, name: /Your files become noise/ })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: /Your files become noise/ })).toBeVisible();
   await page.mouse.wheel(0, 20000);
   await page.waitForTimeout(1500);
   await expect(page.getByRole('link', { name: 'Read the guide' })).toBeVisible();

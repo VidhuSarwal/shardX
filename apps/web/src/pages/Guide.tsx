@@ -19,15 +19,16 @@ const Guide = () => {
     <div>
       <Nav />
       <div className="mx-auto max-w-6xl px-6 pb-24 pt-32 lg:grid lg:grid-cols-[220px_1fr] lg:gap-16">
-        <aside className="mb-10 lg:sticky lg:top-32 lg:mb-0 lg:self-start">
+        <nav aria-label="Guide sections" className="mb-10 lg:sticky lg:top-32 lg:mb-0 lg:self-start">
+          <h1 className="sr-only">ShardX user guide</h1>
           <p className="eyebrow mb-4">User guide</p>
           <ol className="space-y-2 text-sm">
             {GUIDE_SECTIONS.map((s, i) => (
               <li key={s.id}><a href={`#${s.id}`} className={cn('flex gap-3 transition-colors hover:text-foreground', active === s.id ? 'text-primary' : 'text-muted-foreground')}><span className="font-mono text-xs">{String(i + 1).padStart(2, '0')}</span>{s.title}</a></li>
             ))}
           </ol>
-        </aside>
-        <article className="prose-invert max-w-none space-y-20">
+        </nav>
+        <article className="max-w-none space-y-20">
           {GUIDE_SECTIONS.map((s, i) => (
             <Reveal key={s.id} as="div" className="scroll-mt-32">
               <section id={s.id} aria-labelledby={`${s.id}-h`}>

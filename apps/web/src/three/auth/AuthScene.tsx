@@ -1,21 +1,22 @@
-import { useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { Instances, Instance } from '@react-three/drei';
 import { EffectComposer, Bloom } from '@react-three/postprocessing';
 import * as THREE from 'three';
 import { useReducedMotion } from '@/hooks/useReducedMotion';
+import { usePauseWhenHidden } from '../usePauseWhenHidden';
 
-const COUNT = 180;
+const MOBILE = '(max-width: 767px)';
 
-const Cloud = ({ reduced }: { reduced: boolean }) => {
+const Cloud = ({ reduced, count }: { reduced: boolean; count: number }) => {
   const group = useRef<THREE.Group>(null);
-  const items = useMemo(() => Array.from({ length: COUNT }, (_, i) => ({
+  const items = useMemo(() => Array.from({ length: count }, (_, i) => ({
     pos: new THREE.Vector3((Math.random() - 0.5) * 10, (Math.random() - 0.5) * 8, (Math.random() - 0.5) * 6),
     rot: new THREE.Euler(Math.random() * Math.PI, Math.random() * Math.PI, 0),
     scale: 0.08 + Math.random() * 0.22,
     speed: 0.2 + Math.random() * 0.6,
     color: i % 5 === 0 ? '#b56bff' : '#33e0ff',
-  })), []);
+  })), [count]);
   useFrame(({ pointer, clock }, dt) => {
     if (!group.current || reduced) return;
     group.current.rotation.y = THREE.MathUtils.damp(group.current.rotation.y, pointer.x * 0.25, 2, dt);
@@ -31,7 +32,7 @@ const Cloud = ({ reduced }: { reduced: boolean }) => {
   });
   return (
     <group ref={group}>
-      <Instances limit={COUNT}>
+      <Instances key={count} limit={count}>
         <octahedronGeometry args={[1, 0]} />
         <meshStandardMaterial emissiveIntensity={0.8} metalness={0.3} roughness={0.4} />
         {items.map((it, i) => <Instance key={i} position={it.pos} rotation={it.rot} scale={it.scale} color={it.color} />)}
@@ -42,14 +43,22 @@ const Cloud = ({ reduced }: { reduced: boolean }) => {
 
 const AuthScene = ({ className }: { className?: string }) => {
   const reduced = useReducedMotion();
+  const visible = usePauseWhenHidden();
+  const [mobile, setMobile] = useState(() => window.matchMedia(MOBILE).matches);
+  useEffect(() => {
+    const mq = window.matchMedia(MOBILE);
+    const on = (e: MediaQueryListEvent) => setMobile(e.matches);
+    mq.addEventListener('change', on);
+    return () => mq.removeEventListener('change', on);
+  }, []);
   return (
     <div className={className} aria-hidden>
-      <Canvas dpr={[1, 2]} frameloop={reduced ? 'demand' : 'always'} camera={{ position: [0, 0, 8], fov: 50 }} gl={{ antialias: true, alpha: true, powerPreference: 'high-performance' }}>
+      <Canvas dpr={[1, 2]} frameloop={!visible ? 'never' : reduced ? 'demand' : 'always'} camera={{ position: [0, 0, 8], fov: 50 }} gl={{ antialias: true, alpha: true, powerPreference: 'high-performance' }}>
         <ambientLight intensity={0.5} />
         <pointLight position={[3, 3, 5]} intensity={25} color="#33e0ff" />
         <pointLight position={[-3, -2, 3]} intensity={15} color="#b56bff" />
-        <Cloud reduced={reduced} />
-        <EffectComposer><Bloom intensity={0.7} luminanceThreshold={0.3} mipmapBlur /></EffectComposer>
+        <Cloud reduced={reduced} count={mobile ? 90 : 180} />
+        {!mobile && <EffectComposer><Bloom intensity={0.7} luminanceThreshold={0.3} mipmapBlur /></EffectComposer>}
       </Canvas>
     </div>
   );

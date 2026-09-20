@@ -1,4 +1,4 @@
-import { forwardRef, useImperativeHandle, useEffect, useRef, useState, type ReactNode } from 'react';
+import { forwardRef, useImperativeHandle, useRef, type ReactNode } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { EffectComposer, Bloom, Vignette } from '@react-three/postprocessing';
 import * as THREE from 'three';
@@ -6,6 +6,7 @@ import { chapterProgress } from '@/lib/chapters';
 import { progressStore } from './store';
 import { NoiseField } from './NoiseField';
 import { Accents } from './Accents';
+import { usePauseWhenHidden } from '../usePauseWhenHidden';
 
 export type LandingSceneHandle = { setProgress(p: number): void; setMouse(x: number, y: number): void };
 
@@ -34,17 +35,6 @@ const SceneShift = ({ mobile, reducedMotion, children }: { mobile: boolean; redu
     g.position.x = reducedMotion ? target : THREE.MathUtils.damp(g.position.x, target, 2.5, dt);
   });
   return <group ref={shift}>{children}</group>;
-};
-
-/** Pauses rendering when the tab is hidden. */
-const usePauseWhenHidden = () => {
-  const [visible, setVisible] = useState(!document.hidden);
-  useEffect(() => {
-    const on = () => setVisible(!document.hidden);
-    document.addEventListener('visibilitychange', on);
-    return () => document.removeEventListener('visibilitychange', on);
-  }, []);
-  return visible;
 };
 
 const LandingScene = forwardRef<LandingSceneHandle, { reducedMotion: boolean; mobile: boolean; className?: string }>(

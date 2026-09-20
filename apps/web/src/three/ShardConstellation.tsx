@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import type { ShardRecord } from '@/lib/api';
 import { groupShardsByTarget, formatBytes } from '@/lib/fileDetail';
 import { useReducedMotion } from '@/hooks/useReducedMotion';
+import { usePauseWhenHidden } from './usePauseWhenHidden';
 
 const STATUS_COLOR: Record<string, string> = { verified: '#3dffa0', pending: '#ffb02e', corrupted: '#ff4d4d', missing: '#7a2a2a' };
 
@@ -58,9 +59,10 @@ const Rings = ({ shards, driveNames, reduced }: { shards: ShardRecord[]; driveNa
 
 const ShardConstellation = ({ shards, driveNames }: { shards: ShardRecord[]; driveNames: Record<string, string> }) => {
   const reduced = useReducedMotion();
+  const visible = usePauseWhenHidden();
   return (
     <div className="h-[420px] w-full rounded-2xl glass overflow-hidden" aria-hidden>
-      <Canvas dpr={[1, 2]} frameloop={reduced ? 'demand' : 'always'} camera={{ position: [0, 3.5, 6], fov: 45 }} gl={{ antialias: true, alpha: true }}>
+      <Canvas dpr={[1, 2]} frameloop={!visible ? 'never' : reduced ? 'demand' : 'always'} camera={{ position: [0, 3.5, 6], fov: 45 }} gl={{ antialias: true, alpha: true }}>
         <ambientLight intensity={0.6} />
         <pointLight position={[4, 5, 4]} intensity={30} color="#33e0ff" />
         <Rings shards={shards} driveNames={driveNames} reduced={reduced} />

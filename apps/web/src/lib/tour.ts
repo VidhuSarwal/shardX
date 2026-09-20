@@ -8,7 +8,7 @@ export const FILES_TOUR: TourStep[] = [
   { selector: '#dropzone', title: 'Drop a file here', body: 'Anything up to 100 GB. It streams in 5 MB chunks and you can pause, resume or cancel.', placement: 'bottom' },
   { selector: '#strategy', title: 'Pick a distribution strategy', body: 'Balanced is a safe default. Preview the plan to see where each shard will land before you finalize.', placement: 'top' },
   { selector: '#nav-files', title: 'Health & shard map', body: 'Once processing completes, open a file to see its health score, a 3D map of every shard and the audit timeline.', placement: 'right' },
-  { selector: '#downloadKey', title: 'Download your key file', body: 'The .2xpfm.key holds the seed and chunk map. The server never has it — without it nobody, including us, can rebuild the file.', placement: 'top' },
+  { selector: '#downloadKey, #tour-help', title: 'Download your key file', body: 'When processing completes, download your .2xpfm.key from the upload card. It holds the seed and chunk map — the server never has it.', placement: 'top' },
 ];
 
 export const tourReducer = (s: TourState, a: TourAction): TourState => {

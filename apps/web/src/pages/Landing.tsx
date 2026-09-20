@@ -80,9 +80,15 @@ const Landing = () => {
             <div className="sticky top-[28vh] mx-auto w-full max-w-6xl px-6 lg:grid lg:grid-cols-2 lg:gap-12">
               <div className={i % 2 ? 'lg:col-start-2' : 'lg:col-start-1'}>
                 <p className="eyebrow mb-4">{c.eyebrow}</p>
-                <h2 id={`${c.id}-h`} className={`font-semibold leading-[1.02] tracking-tight ${i === 0 ? 'text-5xl md:text-7xl' : 'text-4xl md:text-6xl'}`}>
-                  <SplitText text={c.headline} by="word" stagger={0.06} trigger={i !== 0} />
-                </h2>
+                {i === 0 ? (
+                  <h1 id={`${c.id}-h`} className="text-5xl font-semibold leading-[1.02] tracking-tight md:text-7xl">
+                    <SplitText text={c.headline} by="word" stagger={0.06} trigger={false} />
+                  </h1>
+                ) : (
+                  <h2 id={`${c.id}-h`} className="text-4xl font-semibold leading-[1.02] tracking-tight md:text-6xl">
+                    <SplitText text={c.headline} by="word" stagger={0.06} />
+                  </h2>
+                )}
                 <Reveal delay={0.2} immediate={i === 0} className="mt-6 max-w-lg text-base leading-relaxed text-muted-foreground md:text-lg"><p>{c.body}</p></Reveal>
                 {c.pills.length > 0 && (
                   <Reveal delay={0.35} immediate={i === 0} className="mt-6 flex flex-wrap gap-2">
@@ -107,6 +113,12 @@ const Landing = () => {
           </section>
         ))}
       </main>
+      {current === 0 && !reduced && (
+        <div aria-hidden className="pointer-events-none fixed bottom-6 left-1/2 z-20 flex -translate-x-1/2 flex-col items-center gap-2">
+          <span className="animate-scroll-hint relative block h-10 w-px overflow-hidden bg-border" />
+          <span className="font-mono text-[10px] uppercase tracking-[0.25em] text-muted-foreground">Scroll</span>
+        </div>
+      )}
       <Footer />
     </div>
   );

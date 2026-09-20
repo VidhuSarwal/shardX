@@ -273,12 +273,13 @@ const Files = () => {
           className={cn('relative overflow-hidden rounded-2xl border-2 border-dashed p-12 text-center transition-all duration-300', isDragging ? 'border-primary bg-primary/5 shadow-glow-primary scale-[1.01]' : 'border-border hover:border-primary/50')}
         >
           <div aria-hidden className="pointer-events-none absolute inset-0 bg-[linear-gradient(hsl(var(--border))_1px,transparent_1px),linear-gradient(90deg,hsl(var(--border))_1px,transparent_1px)] bg-[size:32px_32px] opacity-30 [mask-image:radial-gradient(ellipse_at_center,black,transparent_70%)]" />
+          {isDragging && <span aria-hidden className="pointer-events-none absolute left-1/2 top-1/2 h-24 w-24 -translate-x-1/2 -translate-y-1/2 animate-ping rounded-full border border-primary/60" />}
           <div className="relative">
             <div className="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-2xl bg-primary/10 text-primary"><Upload className="h-6 w-6" /></div>
             <h2 className="text-lg font-semibold">Drop a file to shard it</h2>
             <p className="mt-1 text-sm text-muted-foreground">or</p>
-            <input type="file" id="fileInput" className="sr-only" onChange={handleFileInput} />
-            <MagneticButton asChild className="mt-4"><label htmlFor="fileInput" className="cursor-pointer">Choose a file</label></MagneticButton>
+            <input type="file" id="fileInput" className="peer sr-only" onChange={handleFileInput} />
+            <MagneticButton asChild className="mt-4 peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-focus-visible:ring-offset-2"><label htmlFor="fileInput" className="cursor-pointer">Choose a file</label></MagneticButton>
           </div>
         </div>
 
@@ -305,7 +306,7 @@ const Files = () => {
                     <span className={cn('shrink-0 rounded-full border px-2 py-0.5 text-xs', STATUS_PILL[upload.status])}>{getStatusText(upload)}</span>
                   </div>
 
-                  <div className="mt-4 flex gap-1" role="progressbar" aria-valuenow={Math.round(pct)} aria-valuemin={0} aria-valuemax={100}>
+                  <div className="mt-4 flex gap-1" role="progressbar" aria-label="Upload progress" aria-valuenow={Math.round(pct)} aria-valuemin={0} aria-valuemax={100}>
                     {Array.from({ length: SEGMENTS }, (_, i) => (
                       <span key={i} className={cn('h-1.5 flex-1 rounded-full transition-colors duration-300', i < (pct / 100) * SEGMENTS ? 'bg-primary shadow-glow-primary' : 'bg-muted')} />
                     ))}

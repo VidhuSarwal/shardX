@@ -52,6 +52,8 @@
   .gradient-text { background: linear-gradient(120deg, hsl(var(--primary)), hsl(var(--accent))); -webkit-background-clip: text; background-clip: text; color: transparent; }
   .no-scrollbar::-webkit-scrollbar { display: none; }
   .cursor-none, .cursor-none * { cursor: none !important; }
+  .animate-scroll-hint::after { content: ''; position: absolute; left: 0; top: 0; width: 100%; height: 40%; background: hsl(var(--primary)); animation: scroll-hint 1.6s cubic-bezier(0.65, 0, 0.35, 1) infinite; }
+  @keyframes scroll-hint { from { transform: translateY(-100%); } to { transform: translateY(250%); } }
 }
 
 @media (prefers-reduced-motion: reduce) {

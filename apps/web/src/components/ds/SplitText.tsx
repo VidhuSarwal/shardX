@@ -17,7 +17,8 @@ export const SplitText = ({ text, by = 'char', className, stagger = 0.02, trigge
     gsap.fromTo(targets, { yPercent: 110, opacity: 0 }, { yPercent: 0, opacity: 1, duration: 0.8, stagger, ease: 'power4.out', scrollTrigger: trigger ? { trigger: ref.current, start: 'top 85%', once: true } : undefined });
   }, { dependencies: [reduced, text] });
   return (
-    <span ref={ref} className={className} aria-label={text}>
+    <span ref={ref} className={className}>
+      <span className="sr-only">{text}</span>
       {parts.map((p, i) => (
         <span key={i} className="inline-block overflow-hidden align-bottom" aria-hidden>
           <span data-part className="inline-block will-change-transform">{p === ' ' ? ' ' : p}{by === 'word' && i < parts.length - 1 ? ' ' : ''}</span>

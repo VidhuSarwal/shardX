@@ -60,8 +60,12 @@ export const Tour = ({ steps, state, dispatch }: { steps: TourStep[]; state: Tou
     const x = Math.max(12, Math.min(window.innerWidth - c.width - 12, pos.x));
     const y = Math.max(12, Math.min(window.innerHeight - c.height - 12, pos.y));
     gsap.to(card.current, { x, y, autoAlpha: 1, duration: reduced ? 0 : 0.4, ease: 'power3.out' });
-    card.current.querySelector<HTMLElement>('button[data-primary]')?.focus();
   }, [rect, step, reduced]);
+
+  // Focus the primary button once per step — not on every scroll-driven rect update.
+  useEffect(() => {
+    if (state.open) card.current?.querySelector<HTMLElement>('button[data-primary]')?.focus();
+  }, [state.open, state.index]);
 
   useEffect(() => {
     if (!state.open) return;
