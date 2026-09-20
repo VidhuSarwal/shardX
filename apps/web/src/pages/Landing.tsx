@@ -77,30 +77,32 @@ const Landing = () => {
       <main ref={main} className="relative z-10">
         {CHAPTER_CONTENT.map((c, i) => (
           <section key={c.id} id={c.id} aria-labelledby={`${c.id}-h`} className={i === 0 ? 'flex min-h-screen items-center' : 'min-h-[120vh]'}>
-            <div className={`sticky top-[28vh] mx-auto w-full max-w-6xl px-6 ${i % 2 ? 'lg:pl-[52%]' : 'lg:pr-[52%]'}`}>
-              <p className="eyebrow mb-4">{c.eyebrow}</p>
-              <h2 id={`${c.id}-h`} className={`font-semibold leading-[1.02] tracking-tight ${i === 0 ? 'text-5xl md:text-7xl' : 'text-4xl md:text-6xl'}`}>
-                <SplitText text={c.headline} by="word" stagger={0.06} trigger={i !== 0} />
-              </h2>
-              <Reveal delay={0.2} immediate={i === 0} className="mt-6 max-w-lg text-base leading-relaxed text-muted-foreground md:text-lg"><p>{c.body}</p></Reveal>
-              {c.pills.length > 0 && (
-                <Reveal delay={0.35} immediate={i === 0} className="mt-6 flex flex-wrap gap-2">
-                  {c.pills.map((p) => <span key={p} className="rounded-full border border-border bg-card/60 px-3 py-1 font-mono text-xs text-foreground/80">{p}</span>)}
-                </Reveal>
-              )}
-              {!webgl && <div className="mt-8"><ChapterFallback id={c.id} /></div>}
-              {i === 0 && (
-                <Reveal delay={0.5} immediate className="mt-10 flex flex-wrap items-center gap-3">
-                  <MagneticButton size="lg" asChild><Link to="/signup">Create your vault</Link></MagneticButton>
-                  <MagneticButton size="lg" variant="outline" asChild><a href="#upload">See how it works <ArrowDown className="ml-2 h-4 w-4" /></a></MagneticButton>
-                </Reveal>
-              )}
-              {i === CHAPTERS.length - 1 && (
-                <Reveal delay={0.4} className="mt-10 flex flex-wrap items-center gap-3">
-                  <MagneticButton size="lg" asChild><Link to="/signup">Create your vault</Link></MagneticButton>
-                  <MagneticButton size="lg" variant="outline" asChild><Link to="/guide">Read the guide</Link></MagneticButton>
-                </Reveal>
-              )}
+            <div className="sticky top-[28vh] mx-auto w-full max-w-6xl px-6 lg:grid lg:grid-cols-2 lg:gap-12">
+              <div className={i % 2 ? 'lg:col-start-2' : 'lg:col-start-1'}>
+                <p className="eyebrow mb-4">{c.eyebrow}</p>
+                <h2 id={`${c.id}-h`} className={`font-semibold leading-[1.02] tracking-tight ${i === 0 ? 'text-5xl md:text-7xl' : 'text-4xl md:text-6xl'}`}>
+                  <SplitText text={c.headline} by="word" stagger={0.06} trigger={i !== 0} />
+                </h2>
+                <Reveal delay={0.2} immediate={i === 0} className="mt-6 max-w-lg text-base leading-relaxed text-muted-foreground md:text-lg"><p>{c.body}</p></Reveal>
+                {c.pills.length > 0 && (
+                  <Reveal delay={0.35} immediate={i === 0} className="mt-6 flex flex-wrap gap-2">
+                    {c.pills.map((p) => <span key={p} className="rounded-full border border-border bg-card/60 px-3 py-1 font-mono text-xs text-foreground/80">{p}</span>)}
+                  </Reveal>
+                )}
+                {!webgl && <div className="mt-8"><ChapterFallback id={c.id} /></div>}
+                {i === 0 && (
+                  <Reveal delay={0.5} immediate className="mt-10 flex flex-wrap items-center gap-3">
+                    <MagneticButton size="lg" asChild><Link to="/signup">Create your vault</Link></MagneticButton>
+                    <MagneticButton size="lg" variant="outline" asChild><a href="#upload">See how it works <ArrowDown className="ml-2 h-4 w-4" /></a></MagneticButton>
+                  </Reveal>
+                )}
+                {i === CHAPTERS.length - 1 && (
+                  <Reveal delay={0.4} className="mt-10 flex flex-wrap items-center gap-3">
+                    <MagneticButton size="lg" asChild><Link to="/signup">Create your vault</Link></MagneticButton>
+                    <MagneticButton size="lg" variant="outline" asChild><Link to="/guide">Read the guide</Link></MagneticButton>
+                  </Reveal>
+                )}
+              </div>
             </div>
           </section>
         ))}
