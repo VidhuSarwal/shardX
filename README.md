@@ -2,47 +2,87 @@
 
 # ShardX
 
-**Your Google Drive storage limit is a lie. You have much more.**
+**Zero-knowledge, sharded object storage on AWS. Your files become noise; only your Key File can put them back together.**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+[![AWS](https://img.shields.io/badge/AWS-S3%20·%20KMS%20·%20DynamoDB%20·%20Cognito%20·%20SQS%20·%20EventBridge%20·%20Step%20Functions-FF9900?logo=amazonaws&logoColor=white)](infrastructure/terraform)
+[![Terraform](https://img.shields.io/badge/IaC-Terraform-7B42BC?logo=terraform&logoColor=white)](infrastructure/terraform)
 [![Go Version](https://img.shields.io/badge/Go-1.24-00ADD8?logo=go&logoColor=white)](https://go.dev/)
 [![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black)](https://react.dev/)
-[![MongoDB](https://img.shields.io/badge/MongoDB-Driver_1.17-47A248?logo=mongodb&logoColor=white)](https://mongodb.com/)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](#contributing)
 
 </div>
 
 ---
 
-Every Google account comes with 15 GB free. Most people have three. ShardX pools them into a single private drive, splits your files into fragments, injects deterministic noise using ChaCha20-DRBG, and distributes the pieces across your accounts. Google only ever sees meaningless fragments. Reconstruction is only possible with your **Key File** — which never touches the server.
+ShardX is a Go + React storage service built on AWS. Every upload is obfuscated with a ChaCha20-DRBG noise stream, split into shards, and written to S3 under a KMS customer-managed key. Shard integrity metadata lives in DynamoDB, users in Cognito, failed shard uploads are retried through SQS, and every lifecycle step emits to EventBridge and is tracked by Step Functions — all provisioned by Terraform in `infrastructure/`.
+
+The server never holds the obfuscation seed or the chunk map. They live in a `.2xpfm.key` file that only you download. A full compromise of the bucket *and* the database yields nothing readable.
+
+A **Google Drive backend** is also included for running without an AWS account: the same pipeline can shard a file across several linked Drive accounts (3 × 15 GB free → 45 GB).
 
 ---
 
-## How It Works
+## Architecture
 
 ```
-Upload file → Obfuscate (ChaCha20-DRBG) → Split into fragments → Distribute across drives / S3
-                                                                          ↓
-                                              Download .2xpfm.key ← Verify shards (Integrity Engine)
+                         ┌────────────────────────────── AWS ──────────────────────────────┐
+  React (Vite)           │                                                                  │
+  ┌────────────┐ chunks  │  Go API ──▶ obfuscate ──▶ split ──▶ S3 (SSE-KMS CMK)             │
+  │ /files     │────────▶│    │                       │         <session>/chunk_NNN.2xpfm  │
+  │ /files/:id │  poll   │    │                       ├──▶ DynamoDB  shard sha256/size/status│
+  │ /profile   │◀────────│    │                       ├──▶ EventBridge  FILE_CREATED,         │
+  └────────────┘         │    │                       │                 SHARD_UPLOADED, …     │
+        ▲                │    │                       ├──▶ Step Functions  execution / upload │
+        │ JWT            │    │                       └──▶ SQS ──▶ cmd/shardworker (retry,    │
+        ▼                │    │                                    DLQ + CloudWatch alarm)    │
+     Cognito ◀───────────│────┘  auth                                                         │
+                         │  CloudTrail · CloudWatch Logs · AWS Budgets · (OpenSearch, opt-in) │
+                         └────────────────────────────────────────────────────────────────────┘
+                                          ▼
+                              .2xpfm.key  (seed + chunk map — client only)
 ```
 
-1. **Upload** — The browser streams the file in 5 MB chunks to an upload session, then picks a distribution strategy (with a plan preview) and finalizes.
+1. **Upload** — The browser streams the file in 5 MB chunks to an upload session, previews a distribution plan, and finalizes. Finalize returns immediately; processing is async and the UI polls status.
 2. **Obfuscate** — A 32-byte seed initializes a ChaCha20-DRBG that injects deterministic noise at calculated offsets throughout the file.
-3. **Split & Distribute** — The obfuscated file is broken into fragments using your chosen strategy and uploaded across your linked Google Drive accounts (or an S3 bucket in AWS mode). Each shard's SHA-256 is recorded so health, shard placement and an audit timeline can be shown per file.
-4. **Key File** — Download the `.2xpfm.key` that holds the seed and chunk map. Reconstruction from the key file is not implemented yet (see [Roadmap](#roadmap)).
+3. **Shard & store** — The obfuscated stream is split by the chosen strategy and each shard is `PutObject`-ed to S3 with SSE-KMS. Its SHA-256, size, bucket and region are persisted to DynamoDB as a `ShardRecord`.
+4. **Retry & track** — A shard that fails to upload is queued to SQS and marked `pending`; `cmd/shardworker` drains the queue, patches the key file, and completes the session. Every step emits an EventBridge event and is tracked by a Step Functions execution.
+5. **Integrity Engine** — `GET /api/files/{id}/health | shards | timeline` serve a health score, a shard placement map, and an audit timeline straight from DynamoDB.
+6. **Key File** — Download the `.2xpfm.key`. Reconstruction from it is on the [Roadmap](#roadmap).
+
+Full as-built detail: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+
+---
+
+## AWS Services
+
+| Service | Role in ShardX | Code |
+| :--- | :--- | :--- |
+| **S3 + KMS** | Shard storage; one bucket, SSE-KMS with a customer-managed key, keys `<session_id>/chunk_NNN.2xpfm` | `internal/storage/s3_provider.go` |
+| **DynamoDB** | Users, sessions, OAuth state, shard integrity records (5 on-demand tables) | `internal/metadatastore/dynamodb_store.go` |
+| **Cognito** | User pool + app client; API validates JWTs against the pool's JWKS | `internal/authprovider/cognito_provider.go` |
+| **SQS (+ DLQ)** | Shard-upload retry queue consumed by `cmd/shardworker`; dead-letters after 5 receives | `internal/queue`, `internal/worker` |
+| **EventBridge** | Domain events on bus `shardx-events`: `FILE_CREATED`, `SHARD_UPLOADED`, `SHARD_VERIFIED`, … | `internal/events` |
+| **Step Functions** | One execution per upload for lifecycle tracking | `internal/orchestration` |
+| **CloudWatch + CloudTrail** | Log group, DLQ-depth alarm, API audit trail | `modules/observability` |
+| **AWS Budgets + SNS** | Spend guard-rail with e-mail alert | `modules/budget` |
+| **OpenSearch** | Opt-in metadata search (`t3.small.search`), separate Terraform root | `infrastructure/terraform/search` |
+| **IAM** | Least-privilege `api-role`, `shard-worker-role`, `security-worker-role` scoped to the bucket/tables/queue; deployer policies in `infrastructure/iam` | `modules/identity` |
+
+Each integration sits behind an interface (`StorageProvider`, `MetadataStore`, `AuthProvider`, `Emitter`, `Orchestrator`, `Queue`) chosen at boot by `internal/bootstrap` from env vars, so the API and worker share one wiring path.
 
 ---
 
 ## Features
 
-- **Storage aggregation** — 3 accounts × 15 GB = 45 GB free. 5 accounts = 75 GB free.
-- **Zero-knowledge server** — Key File, seed, and chunk map never leave your hands.
-- **ChaCha20-DRBG obfuscation** — Fragments are indistinguishable from random noise.
-- **Multiple chunking strategies** — Greedy, Balanced, Proportional, or Manual distribution.
-- **OAuth aggregation** — Link and manage multiple Google accounts in one session.
-- **AES-256-GCM token encryption** — OAuth tokens encrypted at rest; useless without the server ENV key.
-- **Integrity Engine** — Per-file health score, shard map and audit timeline (`/api/files/{id}/health|shards|timeline`).
-- **Resumable, async uploads** — Chunked upload with pause/cancel; finalize returns immediately and the UI polls processing status.
+- **Zero-knowledge** — Seed and chunk map exist only in the Key File; server-side data is useless without it.
+- **ChaCha20-DRBG obfuscation** — Shards are indistinguishable from random noise.
+- **Encrypted at rest, twice** — SSE-KMS on every S3 object; AES-256-GCM on any stored OAuth token.
+- **Self-healing uploads** — SQS retry with DLQ and alarm; sessions stay `processing` until every shard is verified.
+- **Integrity Engine** — Per-file health %, shard map with placement (bucket/region), and audit timeline.
+- **Chunking strategies** — Greedy, Balanced, Proportional, or Manual sizes, with a plan preview before finalize.
+- **Infrastructure as code** — One `terraform apply` provisions budget → storage → orchestration → identity → observability.
+- **Drive fallback** — Pool multiple Google Drive accounts when running without AWS.
 
 ---
 
@@ -50,39 +90,57 @@ Upload file → Obfuscate (ChaCha20-DRBG) → Split into fragments → Distribut
 
 | Layer | Technology |
 | :--- | :--- |
-| Backend | Go 1.24, MongoDB, JWT |
-| Frontend | React 18, TypeScript, Vite, TanStack Query, React Router |
-| Styling | Tailwind CSS, shadcn/ui |
-| Cryptography | ChaCha20-DRBG, AES-256-GCM, Bcrypt |
-| Cloud | Google Drive API v3 · optional AWS mode: S3 + KMS, DynamoDB, Cognito, SQS, EventBridge, Step Functions (Terraform in `infrastructure/`) |
+| Cloud | AWS: S3, KMS, DynamoDB, Cognito, SQS, EventBridge, Step Functions, CloudWatch, CloudTrail, Budgets, OpenSearch · Terraform |
+| Backend | Go 1.24, AWS SDK for Go v2, `net/http` |
+| Frontend | React 18, TypeScript, Vite, TanStack Query, React Router, Tailwind CSS, shadcn/ui |
+| Cryptography | ChaCha20-DRBG, AES-256-GCM, SHA-256, bcrypt |
+| Fallback mode | Google Drive API v3, MongoDB, HS256 JWT |
 
 ---
 
 ## Getting Started
 
-### Prerequisites
+### 1. Provision AWS
 
-- Go 1.24+
-- Node.js 18+
-- MongoDB (local or [Atlas](https://mongodb.com/atlas) free tier)
-- Google Cloud project with Drive API + OAuth credentials ([guide](https://console.cloud.google.com))
+```bash
+cd infrastructure/terraform
+# edit terraform.tfvars: region, budget e-mail, name suffix
+terraform init && terraform apply   # ~32 resources
+terraform output                    # bucket, table prefix, queue URL, bus, state machine ARN, Cognito ids
+```
 
-### Backend
+IAM policies for the deployer user are in `infrastructure/iam/` (`ShardXInfra`, `ShardXIAM`, `ShardXOps`). Runbook: `infrastructure/terraform/README.md`. For local development without an account, `docker-compose.localstack.yml` in `apps/api` stands in for S3 and SQS.
+
+### 2. Backend
 
 ```bash
 cd apps/api
 cp .env.example .env
-# Required: MONGO_URI, JWT_SECRET, TOKEN_ENC_KEY (base64 of 32 bytes; see generate_key.sh),
-#           GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, BASE_URL (this server, e.g. http://localhost:5555)
-# Recommended: FRONTEND_URL=http://localhost:5173 so the OAuth callback lands on the web app
-go mod tidy
-go run cmd/server/main.go
-# Runs on :5555
 ```
 
-Register `BASE_URL/oauth2/callback` as an authorized redirect URI in your Google OAuth client.
+Point the API at what Terraform created:
 
-### Frontend
+```dotenv
+AWS_PROFILE=shardx
+AWS_REGION=us-east-1
+STORAGE_PROVIDER=s3          S3_BUCKET=<output>   S3_KMS_KEY_ID=alias/shardx-shards
+DB_PROVIDER=dynamodb         DYNAMODB_TABLE_PREFIX=shardx
+AUTH_PROVIDER=cognito        COGNITO_USER_POOL_ID=<output>   COGNITO_CLIENT_ID=<output>
+EVENT_BUS_NAME=shardx-events STATE_MACHINE_ARN=<output>      SQS_QUEUE_URL=<output>
+
+BASE_URL=http://localhost:5555       # this server
+FRONTEND_URL=http://localhost:5173   # web app; OAuth callback redirects here
+JWT_SECRET=…  TOKEN_ENC_KEY=…        # TOKEN_ENC_KEY: base64 of 32 bytes, see generate_key.sh
+MONGO_URI=mongodb://localhost:27017/shardx   # still required, see Limitations
+```
+
+```bash
+go mod tidy
+go run cmd/server/main.go        # API on :5555
+go run cmd/shardworker/main.go   # SQS retry worker (shares UPLOAD_TEMP_DIR with the API)
+```
+
+### 3. Frontend
 
 ```bash
 cd apps/web
@@ -92,7 +150,11 @@ npm run dev              # http://localhost:5173
 npm test && npm run lint
 ```
 
-Routes: `/login`, `/signup`, `/files` (upload), `/files/:sessionId` (health, shard map, timeline), `/profile` (linked drives). See `apps/web/README.md` for the page → endpoint map and `apps/api/API_REFERENCE.md` for the HTTP contract.
+Routes: `/login`, `/signup`, `/files` (upload), `/files/:sessionId` (health, shard map, timeline), `/profile` (storage targets). Page → endpoint map in `apps/web/README.md`; HTTP contract in `apps/api/API_REFERENCE.md`.
+
+### Running on Google Drive instead
+
+Leave the `*_PROVIDER` vars unset, set `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`, and register `BASE_URL/oauth2/callback` as a redirect URI in your Google OAuth client. Link accounts from `/profile`.
 
 ---
 
@@ -103,22 +165,27 @@ shardx/
 ├── apps/
 │   ├── api/                        # Go backend
 │   │   ├── cmd/server/             # HTTP API entry point
-│   │   ├── cmd/shardworker/        # SQS retry worker (S3 mode)
+│   │   ├── cmd/shardworker/        # SQS retry worker
 │   │   └── internal/
-│   │       ├── auth/, oauth/       # JWT + Google OAuth2
+│   │       ├── bootstrap/          # env → provider wiring (shared by server + worker)
+│   │       ├── storage/            # StorageProvider: s3 | drive
+│   │       ├── metadatastore/      # MetadataStore: dynamodb | mongo
+│   │       ├── authprovider/       # AuthProvider: cognito | custom
+│   │       ├── events/             # EventBridge emitter
+│   │       ├── orchestration/      # Step Functions
+│   │       ├── queue/, worker/     # SQS retry pipeline
+│   │       ├── integrity/          # Health scoring
 │   │       ├── filehandlers/       # Upload, finalize, status, key file, health routes
 │   │       ├── fileprocessor/      # Obfuscation, chunking, key file
-│   │       ├── drivemanager/       # Google Drive uploads + quota
-│   │       ├── store/              # MongoDB repository layer
-│   │       ├── storage/            # StorageProvider: drive | s3
-│   │       ├── metadatastore/      # MetadataStore: mongo | dynamodb
-│   │       ├── authprovider/       # AuthProvider: custom | cognito
-│   │       ├── events/, orchestration/, queue/, worker/, integrity/
-│   │       └── bootstrap/          # env → provider wiring
+│   │       ├── auth/, oauth/, drivemanager/, store/   # Drive/Mongo/JWT fallback
+│   │       └── middleware/, models/
 │   └── web/                        # React app (Vite + shadcn/ui)
 │       └── src/{pages,components,lib}   # lib/api.ts is the only place that talks to the API
-├── infrastructure/terraform/       # AWS Phase 1 IaC (+ standalone search/)
-├── docs/                           # PLAN.md, TODO.md, ARCHITECTURE.md
+├── infrastructure/
+│   ├── terraform/                  # Root module + modules/{budget,storage,orchestration,identity,observability}
+│   │   └── search/                 # Standalone OpenSearch root
+│   └── iam/                        # Deployer IAM policies
+├── docs/                           # ARCHITECTURE.md, PLAN.md, TODO.md
 └── UPDATE.md                       # What changed from Vcrypt
 ```
 
@@ -126,11 +193,13 @@ shardx/
 
 ## Security Model
 
-The server stores only two things: hashed passwords (bcrypt) and encrypted OAuth tokens (AES-256-GCM). That's it.
+- **Client-held secrets** — The Key File (seed + chunk map) is generated server-side, handed to the client once, and never persisted. The server keeps only bcrypt password hashes (custom auth) and AES-256-GCM-encrypted OAuth tokens (Drive mode).
+- **Encrypted objects** — Every shard is written with SSE-KMS under a customer-managed key; the API and worker roles get `kms:Decrypt` / `kms:GenerateDataKey*` on that key alone.
+- **Least privilege** — Terraform-managed roles are scoped to the single bucket, the `shardx*` tables, and the one queue. Deployer policies are namespaced to `shardx-*` resources.
+- **Auditability** — CloudTrail on the account, EventBridge domain events, and a per-file audit timeline served from shard records.
+- **Temp files** — The upload is spooled to disk only until sharding completes, then scrubbed (`TEMP_FILE_CLEANUP_MINUTES`).
 
-The server **never** stores the Key File, the obfuscation seed, the chunk-to-drive mapping, or the original file (temp files are scrubbed immediately after distribution).
-
-> **A full database breach exposes nothing useful.** OAuth tokens are encrypted with a server-side ENV key the attacker does not have. And without the Key File, the fragments stored on Google Drive are permanently unreadable.
+> **A full breach of S3 + DynamoDB exposes nothing useful.** Objects are noise without the seed; the seed is only in your Key File.
 
 ⚠️ **The Key File is the single point of trust. There is no server-side recovery. Losing it means permanent loss of access to that file.**
 
@@ -156,8 +225,8 @@ The `.2xpfm.key` file is a JSON document that stays with you. It contains the ob
   "chunks": [
     {
       "chunk_id": 1,
-      "drive_account_id": "<linked account id, or S3 bucket>",
-      "drive_file_id": "<Drive file id, or S3 object key>",
+      "drive_account_id": "<S3 bucket, or linked Drive account id>",
+      "drive_file_id": "<S3 object key, or Drive file id>",
       "filename": "chunk_001.2xpfm",
       "start_offset": 0,
       "end_offset": 5242880,
@@ -173,21 +242,27 @@ The `.2xpfm.key` file is a JSON document that stays with you. It contains the ob
 
 ## Limitations
 
-- The full file is written to the server disk temporarily before splitting, capping the max file size to available server storage (`MAX_FILE_SIZE_GB`).
 - No download/reconstruct endpoint yet — the key file is produced, but restoring a file from it is a manual/offline step for now.
-- In S3 mode, drive space is reported as "Unlimited" (no usage accounting), and users/sessions still live in MongoDB even with `DB_PROVIDER=dynamodb`. See `docs/ARCHITECTURE.md` → Known gaps.
+- `DB_PROVIDER=dynamodb` covers shard metadata; users, sessions and OAuth state still go through MongoDB, so `MONGO_URI` is required in every mode.
+- The Step Functions definition is a placeholder (Pass states) used for tracking, not for driving transitions.
+- S3 mode reports space as "Unlimited" (no usage accounting).
+- The full file is spooled to server disk before sharding, capping file size at available disk (`MAX_FILE_SIZE_GB`).
+
+See `docs/ARCHITECTURE.md` → *Known gaps* for the current list.
 
 ---
 
 ## Roadmap
 
-- [ ] Download / reconstruct endpoint (fetch shards → strip noise → original file)
-- [ ] Unlink a drive account
-- [ ] Browser-side obfuscation via WebAssembly
-- [ ] OneDrive support
-- [ ] Dropbox support
-- [x] S3 support (`STORAGE_PROVIDER=s3`, see `docs/ARCHITECTURE.md`) with SQS retry worker (`cmd/shardworker`)
+- [x] S3 + KMS shard storage, DynamoDB shard records, SQS retry worker
+- [x] EventBridge domain events, Step Functions tracking, CloudWatch/CloudTrail/Budgets via Terraform
 - [x] Integrity Engine (health, shard map, audit timeline)
+- [ ] Download / reconstruct endpoint (fetch shards → strip noise → original file)
+- [ ] Finish DynamoDB migration for users/sessions (drop MongoDB)
+- [ ] Real Step Functions state machine with task tokens
+- [ ] Byte-level re-verification job (re-hash shards from S3)
+- [ ] Unlink a storage account
+- [ ] Browser-side obfuscation via WebAssembly
 
 ---
 
@@ -201,6 +276,9 @@ cd apps/api && go test ./... && bash test_routes.sh   # unit tests + HTTP smoke 
 
 # Frontend
 cd apps/web && npm test && npm run lint && npm run build
+
+# Infrastructure
+cd infrastructure/terraform && terraform fmt -check && terraform validate
 ```
 
 ---
@@ -212,5 +290,5 @@ MIT — free to use, self-host, and modify.
 ---
 
 <div align="center">
-<sub>Built with the belief that your free storage limit shouldn't be 15 GB.</sub>
+<sub>Sharded, obfuscated, zero-knowledge — on AWS.</sub>
 </div>
