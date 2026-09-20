@@ -59,7 +59,7 @@ Full as-built detail: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 | Service | Role in ShardX | Code |
 | :--- | :--- | :--- |
 | **S3 + KMS** | Shard storage; one bucket, SSE-KMS with a customer-managed key, keys `<session_id>/chunk_NNN.2xpfm` | `internal/storage/s3_provider.go` |
-| **DynamoDB** | Users, sessions, OAuth state, shard integrity records (5 on-demand tables) | `internal/metadatastore/dynamodb_store.go` |
+| **DynamoDB** | Users, drive accounts, sessions, OAuth state, shard integrity records (5 on-demand tables; `DB_PROVIDER=dynamodb` needs no MongoDB) | `internal/metadatastore/dynamodb_store.go` |
 | **Cognito** | User pool + app client; API validates JWTs against the pool's JWKS | `internal/authprovider/cognito_provider.go` |
 | **SQS (+ DLQ)** | Shard-upload retry queue consumed by `cmd/shardworker`; dead-letters after 5 receives | `internal/queue`, `internal/worker` |
 | **EventBridge** | Domain events on bus `shardx-events`: `FILE_CREATED`, `SHARD_UPLOADED`, `SHARD_VERIFIED`, … | `internal/events` |
@@ -68,6 +68,7 @@ Full as-built detail: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 | **AWS Budgets + SNS** | Spend guard-rail with e-mail alert | `modules/budget` |
 | **OpenSearch** | Opt-in metadata search (`t3.small.search`), separate Terraform root | `infrastructure/terraform/search` |
 | **IAM** | Least-privilege `api-role`, `shard-worker-role`, `security-worker-role` scoped to the bucket/tables/queue; deployer policies in `infrastructure/iam` | `modules/identity` |
+| **EC2 + CloudFront** | One host (api + shardworker via docker compose) behind a CloudFront distribution that also serves the web app from a private S3 bucket (OAC); env in SSM Parameter Store, ops via SSM | `modules/compute`, `deploy/` |
 
 Each integration sits behind an interface (`StorageProvider`, `MetadataStore`, `AuthProvider`, `Emitter`, `Orchestrator`, `Queue`) chosen at boot by `internal/bootstrap` from env vars, so the API and worker share one wiring path.
 
@@ -131,7 +132,6 @@ EVENT_BUS_NAME=shardx-events STATE_MACHINE_ARN=<output>      SQS_QUEUE_URL=<outp
 BASE_URL=http://localhost:5555       # this server
 FRONTEND_URL=http://localhost:5173   # web app; OAuth callback redirects here
 JWT_SECRET=…  TOKEN_ENC_KEY=…        # TOKEN_ENC_KEY: base64 of 32 bytes, see generate_key.sh
-MONGO_URI=mongodb://localhost:27017/shardx   # still required, see Limitations
 ```
 
 ```bash
@@ -151,6 +151,19 @@ npm test && npm run lint
 ```
 
 Routes: `/login`, `/signup`, `/files` (upload), `/files/:sessionId` (health, shard map, timeline), `/profile` (storage targets). Page → endpoint map in `apps/web/README.md`; HTTP contract in `apps/api/API_REFERENCE.md`.
+
+### 4. Deploy to AWS
+
+`deploy/deploy.sh` is the whole pipeline: `terraform apply` (adds an EC2 host + CloudFront on top of the base infra) → build the web app → sync to the private S3 web bucket → invalidate CloudFront → rebuild the API/worker on the host over SSM → `/health` smoke check.
+
+```bash
+# once: attach infrastructure/iam/ShardXCompute.json to the deployer user (EC2, CloudFront, SSM)
+AWS_PROFILE=shardx ./deploy/deploy.sh          # full deploy; prints https://<id>.cloudfront.net
+AWS_PROFILE=shardx ./deploy/deploy.sh web      # web only
+AWS_PROFILE=shardx ./deploy/deploy.sh api      # api + worker only (git pull + docker compose build on the host)
+```
+
+Topology: one CloudFront distribution serves the SPA from S3 and proxies `/api/*`, `/oauth2/*`, `/health` to a `t3.small` running `deploy/docker-compose.yml` (api + shardworker; all state is in DynamoDB/S3/Cognito) — same origin, so no CORS and `BASE_URL == FRONTEND_URL`. The host has no SSH; use SSM Session Manager. App env lives in SSM Parameter Store (`/shardx/app-env`); edit it and run `deploy.sh api` to roll.
 
 ### Running on Google Drive instead
 
@@ -181,8 +194,9 @@ shardx/
 │   │       └── middleware/, models/
 │   └── web/                        # React app (Vite + shadcn/ui)
 │       └── src/{pages,components,lib}   # lib/api.ts is the only place that talks to the API
+├── deploy/                         # deploy.sh + production docker-compose (runs on the EC2 host)
 ├── infrastructure/
-│   ├── terraform/                  # Root module + modules/{budget,storage,orchestration,identity,observability}
+│   ├── terraform/                  # Root module + modules/{budget,storage,orchestration,identity,observability,compute}
 │   │   └── search/                 # Standalone OpenSearch root
 │   └── iam/                        # Deployer IAM policies
 ├── docs/                           # ARCHITECTURE.md, PLAN.md, TODO.md
@@ -243,7 +257,6 @@ The `.2xpfm.key` file is a JSON document that stays with you. It contains the ob
 ## Limitations
 
 - No download/reconstruct endpoint yet — the key file is produced, but restoring a file from it is a manual/offline step for now.
-- `DB_PROVIDER=dynamodb` covers shard metadata; users, sessions and OAuth state still go through MongoDB, so `MONGO_URI` is required in every mode.
 - The Step Functions definition is a placeholder (Pass states) used for tracking, not for driving transitions.
 - S3 mode reports space as "Unlimited" (no usage accounting).
 - The full file is spooled to server disk before sharding, capping file size at available disk (`MAX_FILE_SIZE_GB`).
@@ -258,7 +271,6 @@ See `docs/ARCHITECTURE.md` → *Known gaps* for the current list.
 - [x] EventBridge domain events, Step Functions tracking, CloudWatch/CloudTrail/Budgets via Terraform
 - [x] Integrity Engine (health, shard map, audit timeline)
 - [ ] Download / reconstruct endpoint (fetch shards → strip noise → original file)
-- [ ] Finish DynamoDB migration for users/sessions (drop MongoDB)
 - [ ] Real Step Functions state machine with task tokens
 - [ ] Byte-level re-verification job (re-hash shards from S3)
 - [ ] Unlink a storage account

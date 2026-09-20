@@ -1,20 +1,13 @@
 # Production stack on the EC2 host (see infrastructure/terraform/modules/compute).
 # api and shardworker share /data/uploads: the worker retries chunk files the API spooled.
+# State lives in AWS (DynamoDB, S3, Cognito); nothing here needs a database container.
 services:
-  mongo:
-    image: mongo:7
-    restart: unless-stopped
-    volumes: [mongo:/data/db]
-
   api:
     build: ../apps/api
     restart: unless-stopped
     env_file: .env
-    environment:
-      MONGO_URI: mongodb://mongo:27017/shardx
     ports: ["80:5555"]
     volumes: [uploads:/data/uploads]
-    depends_on: [mongo]
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:5555/health"]
       interval: 30s
@@ -26,11 +19,7 @@ services:
     command: shardworker
     restart: unless-stopped
     env_file: .env
-    environment:
-      MONGO_URI: mongodb://mongo:27017/shardx
     volumes: [uploads:/data/uploads]
-    depends_on: [mongo]
 
 volumes:
-  mongo:
   uploads:

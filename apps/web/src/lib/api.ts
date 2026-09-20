@@ -1,7 +1,7 @@
 // Thin client for apps/api (cmd/server/main.go). Every endpoint here has a
 // registered route on the backend; keep it that way.
 export const API_BASE_URL: string =
-  import.meta.env.VITE_API_BASE_URL || 'http://localhost:5555';
+  import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5555';
 
 export const getAuthToken = (): string | null => localStorage.getItem('auth_token');
 export const getAuthEmail = (): string | null => localStorage.getItem('auth_email');
