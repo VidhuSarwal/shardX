@@ -46,11 +46,16 @@ const Files = () => {
   const [isDragging, setIsDragging] = useState(false);
 
   const [tour, dispatchTour] = useReducer(tourReducer, { open: false, index: 0 });
+  // Tracks whether the tour has actually opened, so a close at step 0 (e.g. an
+  // immediate Escape) still counts as "done" — `tour.index` alone can't tell
+  // "never opened" apart from "closed while still on the first step".
+  const tourOpened = useRef(false);
   useEffect(() => {
     if (localStorage.getItem(TOUR_DONE_KEY) !== '1') dispatchTour({ type: 'start' });
   }, []);
   useEffect(() => {
-    if (!tour.open && tour.index > 0) localStorage.setItem(TOUR_DONE_KEY, '1');
+    if (tour.open) tourOpened.current = true;
+    else if (tourOpened.current) localStorage.setItem(TOUR_DONE_KEY, '1');
   }, [tour]);
 
   const updateUpload = (sessionId: string, updates: Partial<UploadSession>) => {
