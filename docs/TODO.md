@@ -24,6 +24,21 @@ context. Treat this as the source of truth over memory/chat history.
    on needing them; everything so far has been built against mocks and
    LocalStack.
 
+## Running locally (verified 2026-09-20)
+
+```
+brew services start mongodb-community      # DB name is hardcoded to "complete" in internal/store
+cd apps/api && cp .env.example .env         # fill JWT_SECRET, TOKEN_ENC_KEY (openssl rand -base64 32)
+go run ./cmd/server                         # :5555
+cd apps/web && npm install && npm run dev   # :5173
+```
+
+Drive-mode uploads need real `GOOGLE_CLIENT_ID/SECRET`; S3-mode uploads need
+`terraform apply` + `AWS_PROFILE` (see `apps/api/.env.example`). Everything
+else (signup/login, `/api/files/{id}/health|shards|timeline`, the
+`/files/:sessionId` page) was verified locally against MongoDB with seeded
+shard records.
+
 ## Checklist
 
 ### Group 0 — Foundational interfaces ✅ done
@@ -66,6 +81,12 @@ context. Treat this as the source of truth over memory/chat history.
 - [x] Move `shardx_backend/` → `apps/api/`, `shardx_frontend/` → `apps/web/` (`git mv`; README/PROJECT_DEEP_DIVE/TODO paths updated; no script had a hardcoded cross-dir path)
 - [x] `docs/ARCHITECTURE.md` describing what was actually built
 - [x] `UPDATE.md` summarizing Vcrypt → ShardX changes
+
+## Remaining (needs real credentials)
+
+- [ ] `terraform apply` against a real AWS account (budget module first), then run `cmd/server` + `cmd/shardworker` with `STORAGE_PROVIDER=s3 SQS_QUEUE_URL=…` and do one real upload → health → worker-retry cycle.
+- [ ] Live Cognito pool test of signup/login.
+- [ ] Drive-mode regression run (`tester2.sh`) with real Google OAuth creds.
 
 ## Known gaps / honest limitations to carry forward
 
