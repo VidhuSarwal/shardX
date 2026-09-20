@@ -1,0 +1,17 @@
+services:
+  localstack:
+    image: localstack/localstack:3.8
+    ports:
+      - "4566:4566"
+    environment:
+      # Includes s3 alongside dynamodb since a concurrent task (S3 storage
+      # provider) is expected to add its own docker-compose.localstack.yml
+      # with SERVICES=s3 in a separate worktree; keep both listed here so
+      # this file is compose-compatible if the two are merged later.
+      - SERVICES=s3,dynamodb
+      - DEFAULT_REGION=us-east-1
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
