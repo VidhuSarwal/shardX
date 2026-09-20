@@ -68,6 +68,7 @@ type S3Provider struct {
 	client   s3API
 	uploader s3Uploader
 	bucket   string
+	region   string
 	kmsKeyID string
 }
 
@@ -114,9 +115,15 @@ func NewS3Provider(ctx context.Context, bucket, kmsKeyID string) (*S3Provider, e
 		client:   client,
 		uploader: uploader,
 		bucket:   bucket,
+		region:   cfg.Region,
 		kmsKeyID: kmsKeyID,
 	}, nil
 }
+
+// Bucket returns the bucket name; Region the resolved AWS region. Both
+// are recorded on ShardRecords so the shard map can show placement.
+func (p *S3Provider) Bucket() string { return p.bucket }
+func (p *S3Provider) Region() string { return p.region }
 
 // newS3ProviderForTest builds an S3Provider around fake client/uploader
 // implementations, bypassing NewS3Provider's AWS config loading. Used only

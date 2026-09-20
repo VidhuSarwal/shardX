@@ -113,6 +113,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -794,4 +795,23 @@ func (d *DynamoDBStore) GetShardMetadata(ctx context.Context, sessionID string) 
 		shards = append(shards, recordToShardRecord(rec))
 	}
 	return shards, nil
+}
+
+func (d *DynamoDBStore) UpdateShardStatus(ctx context.Context, sessionID string, shardID int, status string) error {
+	_, err := d.client.UpdateItem(ctx, &dynamodb.UpdateItemInput{
+		TableName: aws.String(d.shardMetadataTable),
+		Key: map[string]types.AttributeValue{
+			"file_id":  &types.AttributeValueMemberS{Value: sessionID},
+			"shard_id": &types.AttributeValueMemberN{Value: strconv.Itoa(shardID)},
+		},
+		UpdateExpression:         aws.String("SET #status = :status"),
+		ExpressionAttributeNames: map[string]string{"#status": "status"},
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":status": &types.AttributeValueMemberS{Value: status},
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("update shard status (shard %d): %w", shardID, err)
+	}
+	return nil
 }

@@ -100,3 +100,7 @@ func (m *MongoStore) SaveShardMetadata(ctx context.Context, sessionID string, sh
 func (m *MongoStore) GetShardMetadata(ctx context.Context, sessionID string) ([]models.ShardRecord, error) {
 	return store.GetShardMetadata(ctx, sessionID)
 }
+
+func (m *MongoStore) UpdateShardStatus(ctx context.Context, sessionID string, shardID int, status string) error {
+	return store.UpdateShardStatus(ctx, sessionID, shardID, status)
+}

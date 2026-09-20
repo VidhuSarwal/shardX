@@ -8,6 +8,8 @@ import (
 	"SE/internal/metadatastore"
 	"SE/internal/models"
 	"SE/internal/orchestration"
+	"SE/internal/queue"
+	"SE/internal/storage"
 	"SE/internal/store"
 	"context"
 	"encoding/json"
@@ -17,6 +19,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"time"
 
@@ -71,6 +74,34 @@ func InitMetadataStore(m metadatastore.MetadataStore) {
 	}
 }
 
+// activeStorageProvider is the chunk storage backend. Defaults to the
+// Drive wrapper so deployments without STORAGE_PROVIDER configured see
+// zero behavior change: the pipeline still takes the exact
+// drivemanager.UploadChunksToDrivers path. Set via InitStorageProvider
+// from main.go at startup.
+var activeStorageProvider storage.StorageProvider = storage.NewDriveProvider()
+
+// InitStorageProvider configures the storage backend used by the upload
+// pipeline and the drive-space handlers. Call once at startup.
+func InitStorageProvider(p storage.StorageProvider) {
+	if p != nil {
+		activeStorageProvider = p
+	}
+}
+
+// retryQueue receives shard uploads that failed in S3 mode so
+// cmd/shardworker can retry them. Defaults to NoopQueue (Enqueue returns
+// queue.ErrNotConfigured), which makes the pipeline fall back to failing
+// the session exactly as Drive mode does. Set via InitRetryQueue.
+var retryQueue queue.Queue = queue.NoopQueue{}
+
+// InitRetryQueue configures the retry queue. Call once at startup.
+func InitRetryQueue(q queue.Queue) {
+	if q != nil {
+		retryQueue = q
+	}
+}
+
 // InitiateUploadHandler - POST /api/files/upload/initiate
 func InitiateUploadHandler(w http.ResponseWriter, r *http.Request) {
 	userID := r.Context().Value("userID").(primitive.ObjectID)
@@ -100,7 +131,7 @@ func InitiateUploadHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get available drive spaces
-	driveSpaces, err := drivemanager.GetUserDriveSpaces(r.Context(), userID)
+	driveSpaces, err := activeStorageProvider.GetSpace(r.Context(), userID.Hex())
 	if err != nil {
 		log.Printf("Failed to get drive spaces: %v", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -308,7 +339,7 @@ func GetUploadStatusHandler(w http.ResponseWriter, r *http.Request) {
 func GetDriveSpacesHandler(w http.ResponseWriter, r *http.Request) {
 	userID := r.Context().Value("userID").(primitive.ObjectID)
 
-	driveSpaces, err := drivemanager.GetUserDriveSpaces(r.Context(), userID)
+	driveSpaces, err := activeStorageProvider.GetSpace(r.Context(), userID.Hex())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -334,7 +365,7 @@ func CalculateChunkingHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get drive spaces
-	driveSpaces, err := drivemanager.GetUserDriveSpaces(r.Context(), userID)
+	driveSpaces, err := activeStorageProvider.GetSpace(r.Context(), userID.Hex())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -354,24 +385,38 @@ func CalculateChunkingHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// placementInfo is implemented by providers (S3Provider) that can name
+// the physical bucket/region shards land in, for the shard map.
+type placementInfo interface {
+	Bucket() string
+	Region() string
+}
+
 // chunkMetadataToShardRecords converts the ChunkMetadata produced by the
-// upload pipeline (drivemanager.UploadChunksToDrivers, which already
-// computes each chunk's SHA256 checksum via calculateFileChecksum) into the
-// ShardRecord shape persisted by the Integrity Engine. Status is set to
-// "verified" because reaching this point means the chunk was successfully
-// uploaded and its checksum was computed against the uploaded bytes.
+// upload pipeline (which already computes each chunk's SHA256 checksum)
+// into the ShardRecord shape persisted by the Integrity Engine. Status is
+// "verified" when the chunk was successfully uploaded (DriveFileID set);
+// a chunk with no location yet was handed to the retry queue and is
+// "pending" until cmd/shardworker uploads it.
 func chunkMetadataToShardRecords(chunks []models.ChunkMetadata) []models.ShardRecord {
 	now := time.Now().UTC()
 	records := make([]models.ShardRecord, 0, len(chunks))
 	for _, c := range chunks {
-		records = append(records, models.ShardRecord{
+		rec := models.ShardRecord{
 			ShardID:   c.ChunkID,
 			SHA256:    c.Checksum,
 			Size:      c.Size,
 			Bucket:    c.DriveAccountID, // "target" in StorageProvider terms; drive account ID in Drive mode
 			CreatedAt: now,
 			Status:    integrity.StatusVerified,
-		})
+		}
+		if c.DriveFileID == "" {
+			rec.Status = integrity.StatusPending
+		}
+		if p, ok := activeStorageProvider.(placementInfo); ok {
+			rec.Bucket, rec.Region = p.Bucket(), p.Region()
+		}
+		records = append(records, rec)
 	}
 	return records
 }
@@ -433,7 +478,7 @@ func processAndUploadFile(ctx context.Context, session *models.UploadSession, st
 	log.Printf("Checking drive spaces for session %s", sessionID.Hex())
 	fileprocessor.UpdateSessionStatus(ctx, sessionID, "processing", 20, "Checking drive spaces...")
 
-	driveSpaces, err := drivemanager.GetUserDriveSpaces(ctx, userID)
+	driveSpaces, err := activeStorageProvider.GetSpace(ctx, userID.Hex())
 	if err != nil {
 		log.Printf("Failed to get drive spaces: %v", err)
 		fileprocessor.UpdateSessionStatus(ctx, sessionID, "failed", 20, fmt.Sprintf("Failed to get drive spaces: %v", err))
@@ -464,9 +509,12 @@ func processAndUploadFile(ctx context.Context, session *models.UploadSession, st
 		fileprocessor.UpdateSessionStatus(ctx, sessionID, "failed", 50, fmt.Sprintf("File splitting failed: %v", err))
 		return
 	}
+	var pendingPaths []string // chunk files left on disk for the retry worker
 	defer func() {
 		for _, path := range chunkPaths {
-			os.Remove(path)
+			if !slices.Contains(pendingPaths, path) {
+				os.Remove(path)
+			}
 		}
 	}()
 	log.Printf("File split into %d chunks for session %s", len(chunkPaths), sessionID.Hex())
@@ -475,7 +523,7 @@ func processAndUploadFile(ctx context.Context, session *models.UploadSession, st
 	log.Printf("Uploading chunks to drives for session %s", sessionID.Hex())
 	fileprocessor.UpdateSessionStatus(ctx, sessionID, "processing", 70, "Uploading chunks to drives...")
 
-	chunkMetadata, err := drivemanager.UploadChunksToDrivers(ctx, chunkPaths, plan, func(current, total int) {
+	progressCb := func(current, total int) {
 		progress := 70 + (20 * float64(current) / float64(total))
 		log.Printf("Upload progress for session %s: chunk %d/%d (%.1f%%)", sessionID.Hex(), current, total, progress)
 		fileprocessor.UpdateSessionStatus(ctx, sessionID, "processing", progress, fmt.Sprintf("Uploading chunk %d/%d...", current, total))
@@ -487,7 +535,16 @@ func processAndUploadFile(ctx context.Context, session *models.UploadSession, st
 				"chunk_total": total,
 			},
 		})
-	})
+	}
+	var chunkMetadata []models.ChunkMetadata
+	if _, isDrive := activeStorageProvider.(*storage.DriveProvider); isDrive {
+		// Drive mode: unchanged fail-fast path.
+		chunkMetadata, err = drivemanager.UploadChunksToDrivers(ctx, chunkPaths, plan, progressCb)
+	} else {
+		// S3 (or any non-Drive) mode: failed chunks go to the retry queue
+		// and their files are kept on disk for cmd/shardworker.
+		chunkMetadata, pendingPaths, err = uploadChunksViaProvider(ctx, sessionID.Hex(), chunkPaths, plan, progressCb)
+	}
 	if err != nil {
 		log.Printf("Upload failed: %v", err)
 		fileprocessor.UpdateSessionStatus(ctx, sessionID, "failed", 70, fmt.Sprintf("Upload failed: %v", err))
@@ -534,6 +591,15 @@ func processAndUploadFile(ctx context.Context, session *models.UploadSession, st
 
 	// Store key file path in session for download
 	store.UpdateSessionKeyFile(ctx, sessionID, keyFilePath)
+
+	// Shards handed to the retry queue: the session stays "processing"
+	// until cmd/shardworker uploads them, patches their location into the
+	// key file, and marks the session complete.
+	if len(pendingPaths) > 0 {
+		log.Printf("Session %s waiting on %d queued shard retries", sessionID.Hex(), len(pendingPaths))
+		fileprocessor.UpdateSessionStatus(ctx, sessionID, "processing", 95, fmt.Sprintf("Waiting for %d shard(s) queued for retry...", len(pendingPaths)))
+		return
+	}
 
 	// Step 7: Complete (100%)
 	log.Printf("Processing complete for session %s. Key file: %s", sessionID.Hex(), keyFilePath)

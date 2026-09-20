@@ -49,4 +49,5 @@ type MetadataStore interface {
 	// Shard metadata (Integrity Engine)
 	SaveShardMetadata(ctx context.Context, sessionID string, shards []models.ShardRecord) error
 	GetShardMetadata(ctx context.Context, sessionID string) ([]models.ShardRecord, error)
+	UpdateShardStatus(ctx context.Context, sessionID string, shardID int, status string) error
 }

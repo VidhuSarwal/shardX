@@ -2,16 +2,12 @@ package main
 
 import (
 	"SE/internal/auth"
-	"SE/internal/authprovider"
-	"SE/internal/events"
+	"SE/internal/bootstrap"
 	"SE/internal/filehandlers"
 	"SE/internal/fileprocessor"
 	"SE/internal/handlers"
-	"SE/internal/metadatastore"
 	"SE/internal/middleware"
 	"SE/internal/oauth"
-	"SE/internal/orchestration"
-	"SE/internal/storage"
 	"SE/internal/store"
 	"context"
 	"encoding/json"
@@ -64,25 +60,22 @@ func main() {
 	// implementations today (all thin wrappers around the existing
 	// concrete packages, unchanged behavior). Additional providers (e.g.
 	// S3, DynamoDB, Cognito) will be added in later phases.
-	metaStore := selectMetadataStore(os.Getenv("DB_PROVIDER"))
-	storageProvider := selectStorageProvider(os.Getenv("STORAGE_PROVIDER"))
-	authProv := selectAuthProvider(os.Getenv("AUTH_PROVIDER"))
-	filehandlers.InitEvents(selectEventEmitter(os.Getenv("EVENT_BUS_NAME")))
-	filehandlers.InitOrchestrator(selectOrchestrator(os.Getenv("STATE_MACHINE_ARN")))
+	metaStore := bootstrap.SelectMetadataStore(os.Getenv("DB_PROVIDER"))
+	storageProvider := bootstrap.SelectStorageProvider(os.Getenv("STORAGE_PROVIDER"))
+	authProv := bootstrap.SelectAuthProvider(os.Getenv("AUTH_PROVIDER"))
+	filehandlers.InitEvents(bootstrap.SelectEventEmitter(os.Getenv("EVENT_BUS_NAME")))
+	filehandlers.InitOrchestrator(bootstrap.SelectOrchestrator(os.Getenv("STATE_MACHINE_ARN")))
 	filehandlers.InitMetadataStore(metaStore)
+	filehandlers.InitStorageProvider(storageProvider)
+	filehandlers.InitRetryQueue(bootstrap.SelectRetryQueue(os.Getenv("SQS_QUEUE_URL")))
 
-	// NOTE: storageProvider and authProv are constructed here to prove the
-	// providers are selectable and usable, but most existing handlers
-	// (internal/filehandlers, internal/oauth, internal/fileprocessor,
-	// mux route registration for signup/login/AuthMiddleware below) still
-	// call the concrete internal/drivemanager, internal/store, and
-	// internal/auth packages directly. Migrating every call site to the
-	// interfaces was judged too risky for this pure-refactor phase; it is
-	// deferred to when real alternative implementations (S3/DynamoDB/
-	// Cognito) land and there is a concrete reason to route through the
-	// interface everywhere. handlers.DriveAccountsHandler has been
-	// migrated to demonstrate the pattern end-to-end.
-	_ = storageProvider
+	// NOTE: authProv is constructed here to prove the provider is
+	// selectable, but signup/login/AuthMiddleware below still call the
+	// concrete internal/auth package directly, and internal/oauth /
+	// internal/fileprocessor still call internal/store directly. Migrating
+	// those call sites is deferred until Cognito is wired into a live
+	// route. storageProvider is now routed through filehandlers
+	// (InitStorageProvider) so STORAGE_PROVIDER=s3 drives the pipeline.
 	_ = authProv
 
 	driveAccountsHandler := handlers.NewDriveAccountsHandler(metaStore)
@@ -138,8 +131,8 @@ func healthCheckHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	response := map[string]interface{}{
-		"status": "healthy",
-		"message": "Server is running",
+		"status":    "healthy",
+		"message":   "Server is running",
 		"timestamp": time.Now().UTC().Format(time.RFC3339),
 	}
 	json.NewEncoder(w).Encode(response)
@@ -153,120 +146,4 @@ func requireMethod(verb string, h http.HandlerFunc) http.HandlerFunc {
 		}
 		h(w, r)
 	}
-}
-
-// selectMetadataStore picks a metadatastore.MetadataStore implementation
-// based on the DB_PROVIDER env var. Defaults to "mongo" if unset.
-func selectMetadataStore(provider string) metadatastore.MetadataStore {
-	if provider == "" {
-		provider = "mongo"
-	}
-	switch provider {
-	case "mongo":
-		return metadatastore.NewMongoStore()
-	case "dynamodb":
-		tablePrefix := os.Getenv("DYNAMODB_TABLE_PREFIX")
-		if tablePrefix == "" {
-			log.Fatalf("DB_PROVIDER=dynamodb requires DYNAMODB_TABLE_PREFIX")
-		}
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		s, err := metadatastore.NewDynamoDBStore(ctx, tablePrefix)
-		if err != nil {
-			log.Fatalf("init dynamodb store: %v", err)
-		}
-		return s
-	default:
-		log.Fatalf("DB_PROVIDER %q not yet implemented, coming in a later phase", provider)
-		return nil
-	}
-}
-
-// selectStorageProvider picks a storage.StorageProvider implementation
-// based on the STORAGE_PROVIDER env var. Defaults to "drive" if unset.
-func selectStorageProvider(provider string) storage.StorageProvider {
-	if provider == "" {
-		provider = "drive"
-	}
-	switch provider {
-	case "drive":
-		return storage.NewDriveProvider()
-	case "s3":
-		bucket := os.Getenv("S3_BUCKET")
-		kmsKeyID := os.Getenv("S3_KMS_KEY_ID")
-		if bucket == "" || kmsKeyID == "" {
-			log.Fatalf("STORAGE_PROVIDER=s3 requires S3_BUCKET and S3_KMS_KEY_ID env vars to be set")
-		}
-		p, err := storage.NewS3Provider(context.Background(), bucket, kmsKeyID)
-		if err != nil {
-			log.Fatalf("init s3 storage provider: %v", err)
-		}
-		return p
-	default:
-		log.Fatalf("STORAGE_PROVIDER %q not yet implemented, coming in a later phase", provider)
-		return nil
-	}
-}
-
-// selectAuthProvider picks an authprovider.AuthProvider implementation
-// based on the AUTH_PROVIDER env var. Defaults to "custom" if unset.
-func selectAuthProvider(provider string) authprovider.AuthProvider {
-	if provider == "" {
-		provider = "custom"
-	}
-	switch provider {
-	case "custom":
-		return authprovider.NewCustomProvider()
-	case "cognito":
-		userPoolID := os.Getenv("COGNITO_USER_POOL_ID")
-		clientID := os.Getenv("COGNITO_CLIENT_ID")
-		region := os.Getenv("AWS_REGION")
-		if userPoolID == "" || clientID == "" || region == "" {
-			log.Fatalf("AUTH_PROVIDER=cognito requires COGNITO_USER_POOL_ID, COGNITO_CLIENT_ID, and AWS_REGION")
-		}
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		p, err := authprovider.NewCognitoProvider(ctx, userPoolID, clientID, region)
-		if err != nil {
-			log.Fatalf("init cognito auth provider: %v", err)
-		}
-		return p
-	default:
-		log.Fatalf("AUTH_PROVIDER %q not yet implemented, coming in a later phase", provider)
-		return nil
-	}
-}
-
-// selectEventEmitter picks an events.Emitter based on the
-// EVENT_BUS_NAME env var. Unset means no event bus configured: return
-// a no-op emitter so local dev / Drive-mode runs without AWS access
-// see zero behavior change.
-func selectEventEmitter(busName string) events.Emitter {
-	if busName == "" {
-		return events.NoopEmitter{}
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	e, err := events.NewEventBridgeEmitter(ctx, busName)
-	if err != nil {
-		log.Fatalf("init eventbridge emitter: %v", err)
-	}
-	return e
-}
-
-// selectOrchestrator picks an orchestration.Orchestrator based on the
-// STATE_MACHINE_ARN env var. Unset means no state machine configured:
-// return a no-op orchestrator so local dev / Drive-mode runs without
-// AWS access see zero behavior change.
-func selectOrchestrator(stateMachineARN string) orchestration.Orchestrator {
-	if stateMachineARN == "" {
-		return orchestration.NoopOrchestrator{}
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	o, err := orchestration.NewSFNOrchestrator(ctx, stateMachineARN)
-	if err != nil {
-		log.Fatalf("init step functions orchestrator: %v", err)
-	}
-	return o
 }

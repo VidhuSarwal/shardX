@@ -294,6 +294,18 @@ func SaveShardMetadata(ctx context.Context, sessionID string, shards []models.Sh
 	return err
 }
 
+// UpdateShardStatus sets the persisted status of a single shard record
+// (e.g. "pending" -> "verified" once a queued retry upload succeeds).
+func UpdateShardStatus(ctx context.Context, sessionID string, shardID int, status string) error {
+	if shardMetadataCol == nil {
+		return errors.New("shard metadata collection not initialized")
+	}
+	_, err := shardMetadataCol.UpdateOne(ctx,
+		bson.M{"file_id": sessionID, "shard_id": shardID},
+		bson.M{"$set": bson.M{"status": status}})
+	return err
+}
+
 // GetShardMetadata returns all persisted shard records for a session.
 func GetShardMetadata(ctx context.Context, sessionID string) ([]models.ShardRecord, error) {
 	if shardMetadataCol == nil {

@@ -34,12 +34,36 @@ import (
 	"SE/internal/models"
 	"SE/internal/storage"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"io"
+	"os"
 )
+
+// ChecksumFile returns the hex SHA256 of the file at path. Same
+// computation as internal/drivemanager's calculateFileChecksum, shared
+// here so the S3 pipeline and the retry worker agree with Drive mode.
+func ChecksumFile(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
 
 // StatusVerified is the ShardRecord.Status value written at upload time once
 // a chunk's checksum has been computed and the chunk successfully uploaded.
 const StatusVerified = "verified"
+
+// StatusPending marks a shard whose upload failed and was handed to the
+// retry queue (S3 mode only). cmd/shardworker flips it to StatusVerified.
+const StatusPending = "pending"
 
 // HealthReport is the JSON-shaped result of a shard health check, per the
 // Integrity Engine product spec.
