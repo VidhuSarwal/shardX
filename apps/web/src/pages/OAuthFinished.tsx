@@ -1,7 +1,6 @@
 import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
+import { GlowCard, MagneticButton } from '@/components/ds';
 import { CheckCircle, ArrowLeft } from 'lucide-react';
 import { FRONTEND_BASE_URL } from '@/lib/config';
 
@@ -27,32 +26,29 @@ const OAuthFinished = () => {
   }, []);
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-background to-secondary p-4">
-      <Card className="w-full max-w-md shadow-[var(--shadow-elevated)]">
-        <CardHeader className="text-center space-y-4">
-          <div className="flex justify-center">
-            <div className="p-4 rounded-full bg-success/10">
-              <CheckCircle className="w-12 h-12 text-success" />
-            </div>
+    <div className="grid min-h-screen place-items-center p-4">
+      <GlowCard className="w-full max-w-md text-center">
+        <div className="flex justify-center">
+          <div className="grid h-16 w-16 place-items-center rounded-full bg-success/10">
+            <CheckCircle className="h-8 w-8 text-success" />
           </div>
-          <CardTitle className="text-2xl">Authorization Complete!</CardTitle>
-          <CardDescription>
-            Your Google Drive has been successfully connected to shardX
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="p-4 bg-muted/50 rounded-lg text-sm text-muted-foreground">
-            You can now close this window and return to your profile to see your connected drive account.
-          </div>
+        </div>
+        <h1 className="mt-4 text-2xl font-semibold">Authorization complete</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Your Google Drive has been successfully connected to ShardX
+        </p>
 
-          <Button asChild className="w-full">
-            <Link to="/profile">
-              <ArrowLeft className="w-4 h-4 mr-2" />
-              Back to Profile
-            </Link>
-          </Button>
-        </CardContent>
-      </Card>
+        <div className="mt-6 rounded-lg bg-muted/50 p-4 text-sm text-muted-foreground">
+          You can now close this window and return to your profile to see your connected drive account.
+        </div>
+
+        <MagneticButton asChild className="mt-6 w-full">
+          <Link to="/profile">
+            <ArrowLeft className="h-4 w-4" />
+            Back to profile
+          </Link>
+        </MagneticButton>
+      </GlowCard>
     </div>
   );
 };
