@@ -27,3 +27,13 @@ output "security_worker_role_arn" {
   description = "ARN of the security-worker-role IAM role (placeholder for later GuardDuty/Macie phases)."
   value       = aws_iam_role.security_worker_role.arn
 }
+
+output "api_policy_json" {
+  description = "api-role inline policy document, reused by the compute module's EC2 host role."
+  value       = data.aws_iam_policy_document.api_role_policy.json
+}
+
+output "shard_worker_policy_json" {
+  description = "shard-worker-role inline policy document, reused by the compute module's EC2 host role."
+  value       = data.aws_iam_policy_document.shard_worker_role_policy.json
+}

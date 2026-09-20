@@ -44,3 +44,39 @@ variable "log_retention_days" {
   type        = number
   default     = 30
 }
+
+# ---- compute (EC2 host + CloudFront) ----
+
+variable "repo_url" {
+  description = "Public git URL the EC2 host clones and builds from."
+  type        = string
+  default     = "https://github.com/VidhuSarwal/shardX.git"
+}
+
+variable "repo_ref" {
+  description = "Branch/tag the EC2 host deploys."
+  type        = string
+  default     = "main"
+}
+
+variable "instance_type" {
+  type    = string
+  default = "t3.small"
+}
+
+variable "google_client_id" {
+  description = "Google OAuth client ID (required by the API at startup; only exercised in Drive mode)."
+  type        = string
+  sensitive   = true
+}
+
+variable "google_client_secret" {
+  type      = string
+  sensitive = true
+}
+
+variable "max_file_size_gb" {
+  description = "Upload cap; the host spools the whole file to its 30 GB root volume first."
+  type        = number
+  default     = 5
+}
