@@ -12,10 +12,13 @@ fi
 
 dnf install -y docker git
 systemctl enable --now docker
+# compose + buildx CLI plugins (AL2023 ships neither; compose build needs buildx).
 mkdir -p /usr/local/lib/docker/cli-plugins
 curl -fsSL "https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64" \
   -o /usr/local/lib/docker/cli-plugins/docker-compose
-chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+curl -fsSL "$(curl -fsSL https://api.github.com/repos/docker/buildx/releases/latest | grep -o 'https://[^"]*linux-amd64' | head -1)" \
+  -o /usr/local/lib/docker/cli-plugins/docker-buildx
+chmod +x /usr/local/lib/docker/cli-plugins/docker-compose /usr/local/lib/docker/cli-plugins/docker-buildx
 
 install -d /opt/shardx
 if [ ! -d /opt/shardx/.git ]; then
