@@ -1,136 +1,107 @@
-const API_BASE_URL = 'http://localhost:5555';
+// Thin client for apps/api (cmd/server/main.go). Every endpoint here has a
+// registered route on the backend; keep it that way.
+export const API_BASE_URL: string =
+  import.meta.env.VITE_API_BASE_URL || 'http://localhost:5555';
 
+export const getAuthToken = (): string | null => localStorage.getItem('auth_token');
+export const getAuthEmail = (): string | null => localStorage.getItem('auth_email');
 
-export const getAuthToken = (): string | null => {
-  return localStorage.getItem('auth_token');
-};
-
-export const setAuthToken = (token: string): void => {
+export const setAuthToken = (token: string, email?: string): void => {
   localStorage.setItem('auth_token', token);
-  try { window.dispatchEvent(new Event('auth:changed')); } catch {}
+  if (email) localStorage.setItem('auth_email', email);
+  window.dispatchEvent(new Event('auth:changed'));
 };
 
 export const clearAuthToken = (): void => {
   localStorage.removeItem('auth_token');
-  try { window.dispatchEvent(new Event('auth:changed')); } catch {}
+  localStorage.removeItem('auth_email');
+  window.dispatchEvent(new Event('auth:changed'));
 };
 
-// Extended RequestInit with client-side controls
-type RequestInitEx = RequestInit & {
-  // When true, do not auto-clear token or redirect on 401. Caller will handle.
+/** Non-2xx response. `status` lets callers branch without parsing messages. */
+export class ApiError extends Error {
+  constructor(public status: number, message: string) {
+    super(message);
+    this.name = 'ApiError';
+  }
+}
+
+type RequestOpts = RequestInit & {
+  /** When true, a 401 is thrown to the caller instead of clearing the token and redirecting. */
   skipAuthRedirect?: boolean;
 };
 
-export const apiRequest = async <T>(
-  endpoint: string,
-  options: RequestInitEx = {}
-): Promise<T> => {
+// Backend errors are http.Error() plain-text bodies; JSON only on success.
+const request = async (endpoint: string, { skipAuthRedirect, ...init }: RequestOpts = {}): Promise<Response> => {
+  const headers = new Headers(init.headers);
   const token = getAuthToken();
-  const headers: HeadersInit = {
-    ...options.headers,
-  };
+  if (token) headers.set('Authorization', `Bearer ${token}`);
+  if (init.body && !(init.body instanceof FormData)) headers.set('Content-Type', 'application/json');
 
-  if (token && !endpoint.includes('/oauth2/callback')) {
-    headers['Authorization'] = `Bearer ${token}`;
+  const response = await fetch(`${API_BASE_URL}${endpoint}`, { ...init, headers });
+
+  if (response.status === 401 && !skipAuthRedirect) {
+    clearAuthToken();
+    window.location.href = '/login';
   }
-
-  if (options.body && !(options.body instanceof FormData)) {
-    headers['Content-Type'] = 'application/json';
-  }
-
-  const url = /^https?:\/\//i.test(endpoint) ? endpoint : `${API_BASE_URL}${endpoint}`;
-  const response = await fetch(url, {
-    ...options,
-    headers,
-  });
-
-  if (response.status === 401) {
-    if (!(options as RequestInitEx).skipAuthRedirect) {
-      clearAuthToken();
-      window.location.href = '/login';
-    }
-    throw new Error('Unauthorized');
-  }
-
   if (!response.ok) {
-    // Prefer server-provided error message; fall back to plain text; else status code
-    let errMsg = `HTTP ${response.status}`;
-    try {
-      const clone = response.clone();
-      // Try JSON first
-      const errorData = await clone.json();
-      if (errorData) {
-        // Common fields: message | error | detail
-        errMsg = (errorData.message || errorData.error || errorData.detail || errMsg) as string;
-      }
-    } catch {
-      try {
-        const txt = await response.clone().text();
-        if (txt && txt.trim().length > 0) {
-          errMsg = txt.trim();
-        }
-      } catch {
-        // ignore
-      }
-    }
-    throw new Error(errMsg);
+    const text = (await response.text()).trim();
+    throw new ApiError(response.status, text || `HTTP ${response.status}`);
   }
-
-  return response.json();
+  return response;
 };
 
-// Raw fetch helper that returns Blob/Text without JSON parsing and optional 401 skip
-export const apiRequestBlob = async (
-  endpoint: string,
-  options: RequestInitEx = {}
-): Promise<Blob> => {
-  const token = getAuthToken();
-  const headers: HeadersInit = {
-    ...options.headers,
-  };
+export const apiRequest = async <T>(endpoint: string, options?: RequestOpts): Promise<T> =>
+  (await request(endpoint, options)).json();
 
-  if (token && !endpoint.includes('/oauth2/callback')) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
+export const apiRequestBlob = async (endpoint: string, options?: RequestOpts): Promise<Blob> =>
+  (await request(endpoint, options)).blob();
 
-  const url = /^https?:\/\//i.test(endpoint) ? endpoint : `${API_BASE_URL}${endpoint}`;
-  const response = await fetch(url, {
-    ...options,
-    headers,
-  });
+// ---- Response shapes (mirror the Go handlers' JSON) ----
 
-  if (response.status === 401) {
-    if (!options.skipAuthRedirect) {
-      clearAuthToken();
-      window.location.href = '/login';
-    }
-    throw new Error('Unauthorized');
-  }
+export type ChunkingStrategy = 'greedy' | 'balanced' | 'proportional' | 'manual';
 
-  if (!response.ok) {
-    // Try parse JSON error, then text, else status
-    let errMsg = `HTTP ${response.status}`;
-    try {
-      const data = await response.clone().json();
-      errMsg = (data && (data.message || data.error || data.detail)) || errMsg;
-    } catch {
-      try {
-        const txt = await response.clone().text();
-        if (txt && txt.trim().length > 0) {
-          errMsg = txt.trim();
-        }
-      } catch {
-        // ignore
-      }
-    }
-    throw new Error(errMsg);
-  }
-
-  return response.blob();
+/** models.DriveSpaceInfo */
+export type DriveSpace = {
+  account_id: string;
+  display_name: string;
+  owner_name?: string;
+  owner_email?: string;
+  total_space: number;
+  used_space: number;
+  free_space: number;
+  available: boolean;
+  error?: string;
 };
 
-// ---- Integrity Engine / shard placement / audit timeline ----
+/** handlers.ListDriveAccounts */
+export type DriveAccount = {
+  id: string;
+  provider: string;
+  display_name: string;
+  created_at: string;
+};
 
+/** models.ChunkPlan */
+export type ChunkPlan = {
+  chunk_id: number;
+  drive_account_id: string;
+  size: number;
+  start_offset: number;
+  end_offset: number;
+};
+
+/** filehandlers.GetUploadStatusHandler */
+export type UploadStatus = {
+  status: 'uploading' | 'processing' | 'complete' | 'failed';
+  uploaded_size: number;
+  total_size: number;
+  processing_progress: number;
+  error_message: string;
+  completed_at: string | null;
+};
+
+/** integrity.FileHealth */
 export type FileHealth = {
   file_id: string;
   health_percentage: number;
@@ -143,6 +114,7 @@ export type FileHealth = {
 
 export type ShardStatus = 'verified' | 'pending' | 'corrupted' | 'missing';
 
+/** models.ShardRecord */
 export type ShardRecord = {
   file_id: string;
   shard_id: number;
@@ -155,17 +127,11 @@ export type ShardRecord = {
   status: ShardStatus;
 };
 
+/** filehandlers.TimelineEvent */
 export type TimelineEvent = {
   type: string;
   at: string | null;
   detail?: Record<string, unknown>;
-};
-
-export type DownloadStatusResponse = {
-  status: 'downloading' | 'decrypting' | 'complete' | 'failed';
-  progress: number;
-  error_message?: string | null;
-  completed_at?: string | null;
 };
 
 export const api = {
@@ -183,168 +149,57 @@ export const api = {
     }),
 
   // Drive
-  getDriveLinkUrl: () =>
-    apiRequest<{ auth_url: string }>('/api/drive/link'),
-
-  getDriveAccounts: () =>
-    apiRequest<Array<{
-      id: string;
-      provider: string;
-      display_name: string;
-      created_at: string;
-    }>>('/api/drive/accounts'),
-
-  getDriveSpace: () =>
-    apiRequest<Array<{
-      account_id: string;
-      display_name: string;
-      owner_name?: string;
-      owner_email?: string;
-      total_space: number;
-      used_space: number;
-      free_space: number;
-      available: boolean;
-      error?: string;
-    }>>('/api/drive/space'),
+  getDriveLinkUrl: () => apiRequest<{ auth_url: string }>('/api/drive/link'),
+  getDriveAccounts: () => apiRequest<DriveAccount[]>('/api/drive/accounts'),
+  getDriveSpace: () => apiRequest<DriveSpace[]>('/api/drive/space'),
 
   // Upload
   initiateUpload: (filename: string, file_size: number) =>
     apiRequest<{
       session_id: string;
       upload_url: string;
-      drive_spaces: Array<{
-        account_id: string;
-        display_name: string;
-        total_space: number;
-        used_space: number;
-        free_space: number;
-        available: boolean;
-      }>;
+      drive_spaces: DriveSpace[];
       max_file_size: number;
     }>('/api/files/upload/initiate', {
       method: 'POST',
       body: JSON.stringify({ filename, file_size }),
     }),
 
-  uploadChunk: async (sessionId: string, chunk: Blob, offset: number) => {
+  uploadChunk: (sessionId: string, chunk: Blob, offset: number) => {
     const formData = new FormData();
     formData.append('chunk', chunk);
-    formData.append('offset', offset.toString());
-
-    return apiRequest<{
-      uploaded: number;
-      total: number;
-      progress: number;
-    }>(`/api/files/upload/chunk?session_id=${sessionId}`, {
-      method: 'POST',
-      body: formData,
-    });
+    formData.append('offset', String(offset));
+    return apiRequest<{ uploaded: number; total: number; progress: number }>(
+      `/api/files/upload/chunk?session_id=${encodeURIComponent(sessionId)}`,
+      { method: 'POST', body: formData },
+    );
   },
 
-  uploadChunkTo: async (uploadUrl: string, chunk: Blob, offset: number) => {
-    const formData = new FormData();
-    formData.append('chunk', chunk);
-    formData.append('offset', offset.toString());
-
-    return apiRequest<{
-      uploaded: number;
-      total: number;
-      progress: number;
-    }>(uploadUrl, {
-      method: 'POST',
-      body: formData,
-    });
-  },
-
-  finalizeUpload: (
-    session_id: string,
-    strategy: 'greedy' | 'balanced' | 'proportional' | 'manual',
-    manual_chunk_sizes?: number[]
-  ) =>
-    apiRequest<{
-      message: string;
-      session_id: string;
-      status_url: string;
-    }>('/api/files/upload/finalize', {
+  finalizeUpload: (session_id: string, strategy: ChunkingStrategy, manual_chunk_sizes?: number[]) =>
+    apiRequest<{ message: string; session_id: string; status_url: string }>('/api/files/upload/finalize', {
       method: 'POST',
       body: JSON.stringify({ session_id, strategy, manual_chunk_sizes }),
     }),
 
   getUploadStatus: (sessionId: string) =>
-    apiRequest<{
-      status: 'uploading' | 'processing' | 'complete' | 'failed';
-      uploaded_size: number;
-      total_size: number;
-      processing_progress: number;
-      error_message: string;
-      completed_at: string | null;
-    }>(`/api/files/upload/status/${sessionId}`),
+    apiRequest<UploadStatus>(`/api/files/upload/status/${sessionId}`),
 
-  getUploadStatusByUrl: (statusUrl: string) =>
-    apiRequest<{
-      status: 'uploading' | 'processing' | 'complete' | 'failed';
-      uploaded_size: number;
-      total_size: number;
-      processing_progress: number;
-      error_message: string;
-      completed_at: string | null;
-    }>(statusUrl),
-
-  calculateChunking: (
-    file_size: number,
-    strategy: 'greedy' | 'balanced' | 'proportional' | 'manual',
-    manual_chunk_sizes?: number[]
-  ) =>
-    apiRequest<{
-      plan: Array<{
-        chunk_id: number;
-        drive_account_id: string;
-        size: number;
-        start_offset: number;
-        end_offset: number;
-      }>;
-      num_chunks: number;
-    }>('/api/files/chunking/calculate', {
+  calculateChunking: (file_size: number, strategy: ChunkingStrategy, manual_chunk_sizes?: number[]) =>
+    apiRequest<{ plan: ChunkPlan[]; num_chunks: number }>('/api/files/chunking/calculate', {
       method: 'POST',
       body: JSON.stringify({ file_size, strategy, manual_chunk_sizes }),
     }),
 
-  // Key file download (backend: GET /api/files/download-key/:session_id). Returns Blob for client-side save.
+  // Key file (only available once status is "complete")
   downloadKey: (sessionId: string) =>
-    apiRequestBlob(`/api/files/download-key/${sessionId}`, {
-      method: 'GET',
-      // Let caller handle any 401 (e.g., refresh once then retry)
-      skipAuthRedirect: true,
-    }),
+    apiRequestBlob(`/api/files/download-key/${sessionId}`, { skipAuthRedirect: true }),
 
-  // Integrity Engine (backend: GET /api/files/{session_id}/health|shards|timeline)
-  getFileHealth: (sessionId: string) =>
-    apiRequest<FileHealth>(`/api/files/${sessionId}/health`),
+  // Integrity Engine
+  getFileHealth: (sessionId: string) => apiRequest<FileHealth>(`/api/files/${sessionId}/health`),
 
   getFileShards: (sessionId: string) =>
     apiRequest<{ file_id: string; shards: ShardRecord[] }>(`/api/files/${sessionId}/shards`),
 
   getFileTimeline: (sessionId: string) =>
     apiRequest<{ file_id: string; events: TimelineEvent[] }>(`/api/files/${sessionId}/timeline`),
-
-  initiateDownload: (keyFile: File) => {
-    const formData = new FormData();
-    formData.append('key_file', keyFile);
-    return apiRequest<{ session_id: string; expires_in_sec?: number }>(
-      '/api/files/download/initiate',
-      {
-        method: 'POST',
-        body: formData,
-      }
-    );
-  },
-
-  getDownloadStatus: (sessionId: string) =>
-    apiRequest<DownloadStatusResponse>(`/api/files/download/status/${sessionId}`),
-
-  downloadFile: (sessionId: string) =>
-    apiRequestBlob(`/api/files/download/file/${sessionId}`, {
-      method: 'GET',
-      skipAuthRedirect: true,
-    }),
 };

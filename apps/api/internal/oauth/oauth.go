@@ -172,8 +172,13 @@ func OauthCallbackHandler(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("Drive account added successfully for user %s", stored.UserID.Hex())
 
-	// redirect to completion page
-	http.Redirect(w, r, os.Getenv("BASE_URL")+"/oauth/finished", http.StatusSeeOther)
+	// Redirect to the web app's completion page (which notifies the opener
+	// window); fall back to this server's static page when FRONTEND_URL is unset.
+	finishedBase := strings.TrimSuffix(os.Getenv("FRONTEND_URL"), "/")
+	if finishedBase == "" {
+		finishedBase = strings.TrimSuffix(os.Getenv("BASE_URL"), "/")
+	}
+	http.Redirect(w, r, finishedBase+"/oauth/finished", http.StatusSeeOther)
 }
 
 // AES-GCM encrypt helper
