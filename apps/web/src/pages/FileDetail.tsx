@@ -1,6 +1,7 @@
+import { lazy, Suspense } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { Layout } from '@/components/Layout';
+import { AppShell } from '@/components/AppShell';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -9,9 +10,13 @@ import { api } from '@/lib/api';
 import { FileHealthCard } from '@/components/FileHealthCard';
 import { ShardMap } from '@/components/ShardMap';
 import { AuditTimeline } from '@/components/AuditTimeline';
+import { useWebGL } from '@/hooks/useWebGL';
+
+const ShardConstellation = lazy(() => import('@/three/ShardConstellation'));
 
 const FileDetail = () => {
   const { sessionId = '' } = useParams();
+  const webgl = useWebGL();
 
   // Poll while any shard is still pending (S3 retry worker in flight).
   const shards = useQuery({
@@ -39,31 +44,35 @@ const FileDetail = () => {
 
   return (
     <ProtectedRoute>
-      <Layout>
-        <div className="space-y-6">
-          <div className="flex items-center gap-3">
-            <Button variant="ghost" size="sm" asChild>
-              <Link to="/files">
-                <ArrowLeft className="w-4 h-4 mr-1" /> Uploads
-              </Link>
-            </Button>
-          </div>
-          <div>
-            <h1 className="text-3xl font-bold mb-1">File Detail</h1>
-            <p className="text-muted-foreground font-mono text-sm">{sessionId}</p>
-          </div>
-
-          {error && (
-            <p className="text-sm text-destructive">{error instanceof Error ? error.message : 'Failed to load'}</p>
-          )}
-
-          <div className="grid gap-6 md:grid-cols-2">
-            {health.data ? <FileHealthCard health={health.data} /> : <Skeleton className="h-40" />}
-            {shards.data ? <ShardMap shards={shards.data.shards} driveNames={driveNames} /> : <Skeleton className="h-40" />}
-          </div>
-          {timeline.data ? <AuditTimeline events={timeline.data.events} /> : <Skeleton className="h-40" />}
+      <AppShell>
+        <div className="mb-8">
+          <Button variant="ghost" size="sm" asChild className="-ml-3 mb-4">
+            <Link to="/files">
+              <ArrowLeft className="w-4 h-4" /> Uploads
+            </Link>
+          </Button>
+          <p className="eyebrow mb-2">File</p>
+          <h1 className="font-mono text-2xl font-semibold tracking-tight">{sessionId}</h1>
         </div>
-      </Layout>
+
+        {error && (
+          <p className="mb-6 text-sm text-destructive">{error instanceof Error ? error.message : 'Failed to load'}</p>
+        )}
+
+        <div className="grid gap-6 md:grid-cols-2">
+          {health.data ? <FileHealthCard health={health.data} /> : <Skeleton className="h-40 rounded-2xl" />}
+          {webgl && shards.data ? (
+            <Suspense fallback={<Skeleton className="h-[420px] rounded-2xl" />}>
+              <ShardConstellation shards={shards.data.shards} driveNames={driveNames} />
+            </Suspense>
+          ) : null}
+        </div>
+
+        <div className="mt-6 space-y-6">
+          {shards.data ? <ShardMap shards={shards.data.shards} driveNames={driveNames} /> : <Skeleton className="h-40 rounded-2xl" />}
+          {timeline.data ? <AuditTimeline events={timeline.data.events} /> : <Skeleton className="h-40 rounded-2xl" />}
+        </div>
+      </AppShell>
     </ProtectedRoute>
   );
 };
