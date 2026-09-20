@@ -49,7 +49,7 @@ context. Treat this as the source of truth over memory/chat history.
 - [x] Terraform modules: budget, storage (S3+KMS), identity (Cognito+IAM), orchestration (EventBridge/SQS/Step Functions), observability (CloudWatch/CloudTrail) — `infrastructure/terraform/`
 - [x] Standalone OpenSearch module (`infrastructure/terraform/search/`) — apply/destroy independently per dev session for cost control
 - [x] Apply/destroy runbook in `infrastructure/terraform/README.md`
-- [ ] **Not yet done:** DynamoDB table definitions in the Terraform `storage` module — there's a `TODO(dynamodb)` comment there. The exact table/GSI schema needed is documented in `internal/metadatastore/dynamodb_store.go`'s package comment (users w/ email-index, upload-sessions w/ user_id-index, drive-accounts w/ user_id-index, shard-metadata w/ composite key file_id+shard_id, oauth-states needing a numeric TTL attribute) — turn that into actual `.tf` resources.
+- [x] DynamoDB table definitions — `infrastructure/terraform/modules/storage/dynamodb.tf` (5 on-demand tables, GSIs w/ ALL projection, oauth-states TTL, CMK encryption). Table ARNs + retry queue ARN now feed the identity module so api-role/shard-worker-role get scoped DynamoDB + SQS grants. `terraform validate` passes.
 - [ ] **Not yet applied to real AWS at all.** No `terraform apply` has been run. The default S3 bucket name (`shardx-prod-shards`) will collide globally — must be overridden via tfvars before first apply.
 
 ### Group 4 — Frontend (not started)

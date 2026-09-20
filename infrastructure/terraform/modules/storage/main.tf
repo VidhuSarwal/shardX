@@ -3,9 +3,7 @@
 # S3 bucket for file shards, encrypted with a dedicated customer-managed
 # KMS key. Public access is fully blocked and versioning is enabled.
 #
-# TODO(dynamodb): DynamoDB tables for shard/file metadata are intentionally
-# NOT defined here. They will be added once the Go DynamoDB implementation
-# lands (tracked as a separate, later task).
+# DynamoDB metadata tables live in dynamodb.tf alongside, sharing the CMK.
 
 data "aws_caller_identity" "current" {}
 

@@ -2,11 +2,9 @@
 
 Minimal, hackathon-cost-conscious infrastructure-as-code for ShardX, an
 AWS-native file storage platform. This is Phase 1 of a larger migration --
-scope is intentionally narrow: budget guardrail, S3 storage, identity/IAM,
-event orchestration scaffolding, observability, and a standalone search
-domain. DynamoDB tables are explicitly deferred (see
-`modules/storage/main.tf` TODO) to a later task once the Go DynamoDB
-implementation lands.
+scope is intentionally narrow: budget guardrail, S3 storage + DynamoDB
+metadata tables, identity/IAM, event orchestration scaffolding,
+observability, and a standalone search domain.
 
 ## Directory layout
 
@@ -82,8 +80,9 @@ terraform apply \
   -var="budget_alert_email=you@example.com"
 ```
 
-This provisions, in order: storage (S3 + KMS), identity (Cognito + IAM
-roles), orchestration (EventBridge + SQS/DLQ + Step Functions), and
+This provisions, in order: storage (S3 + KMS + 5 on-demand DynamoDB
+tables), orchestration (EventBridge + SQS/DLQ + Step Functions), identity
+(Cognito + IAM roles scoped to the bucket, tables and retry queue), and
 observability (CloudWatch + CloudTrail).
 
 To tear all of this down later:
@@ -176,9 +175,9 @@ dollar.
 - `security-worker-role` only has CloudWatch Logs write access today. It's
   a placeholder reserved for a future phase that wires up GuardDuty/Macie
   finding processing.
-- DynamoDB tables are NOT defined anywhere in this Terraform. See the
-  one-line TODO in `modules/storage/main.tf` -- they're deferred to when
-  the Go DynamoDB implementation lands.
+- DynamoDB tables (`modules/storage/dynamodb.tf`) mirror the schema in
+  `internal/metadatastore/dynamodb_store.go`. The `oauth-states` TTL is
+  declared but the Go store doesn't write `expires_at_unix` yet.
 - The OpenSearch domain uses IAM-based (SigV4) access control restricted to
   specific role ARNs, not Cognito-based dashboards auth or fine-grained
   access control (which would add complexity/cost not needed yet).

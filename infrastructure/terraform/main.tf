@@ -4,8 +4,8 @@
 #   1. budget        -- safety net, apply first and standalone
 #                        (terraform apply -target=module.budget)
 #   2. storage       -- S3 bucket + KMS CMK
-#   3. identity      -- Cognito + IAM roles (consumes storage outputs)
-#   4. orchestration -- EventBridge + SQS + Step Functions
+#   3. orchestration -- EventBridge + SQS + Step Functions
+#   4. identity      -- Cognito + IAM roles (consumes storage + orchestration outputs)
 #   5. observability -- CloudWatch + CloudTrail (consumes budget's SNS topic)
 #
 # The `search` module (OpenSearch) is intentionally NOT wired in here. It
@@ -32,9 +32,11 @@ module "storage" {
 module "identity" {
   source = "./modules/identity"
 
-  project_name      = var.project_name
-  shards_bucket_arn = module.storage.bucket_arn
-  kms_key_arn       = module.storage.kms_key_arn
+  project_name        = var.project_name
+  shards_bucket_arn   = module.storage.bucket_arn
+  kms_key_arn         = module.storage.kms_key_arn
+  dynamodb_table_arns = module.storage.dynamodb_table_arns
+  retry_queue_arn     = module.orchestration.queue_arn
 }
 
 module "orchestration" {

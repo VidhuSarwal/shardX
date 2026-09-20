@@ -67,3 +67,8 @@ output "app_log_group_name" {
   description = "Name of the application CloudWatch Log Group."
   value       = module.observability.log_group_name
 }
+
+output "dynamodb_table_prefix" {
+  description = "Value for DYNAMODB_TABLE_PREFIX in the Go backend (.env)."
+  value       = module.storage.dynamodb_table_prefix
+}

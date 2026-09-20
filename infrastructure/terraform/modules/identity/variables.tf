@@ -14,7 +14,13 @@ variable "kms_key_arn" {
 }
 
 variable "dynamodb_table_arns" {
-  description = "ARNs of DynamoDB tables the api-role may read/write. Empty by default since DynamoDB tables are not yet provisioned (see storage module TODO); populate this once tables exist."
+  description = "ARNs of DynamoDB tables the api-role and shard-worker-role may read/write."
   type        = list(string)
   default     = []
+}
+
+variable "retry_queue_arn" {
+  description = "ARN of the SQS shard-retry queue (from the orchestration module). api-role sends to it; shard-worker-role consumes it. Empty disables the SQS statements."
+  type        = string
+  default     = ""
 }

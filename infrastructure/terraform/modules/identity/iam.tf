@@ -54,9 +54,6 @@ data "aws_iam_policy_document" "api_role_policy" {
     resources = [var.kms_key_arn]
   }
 
-  # DynamoDB tables are provisioned in a later phase (see storage module
-  # TODO). This statement is only emitted once table ARNs are supplied;
-  # until then it is a no-op (empty resource list is skipped via count).
   dynamic "statement" {
     for_each = length(var.dynamodb_table_arns) > 0 ? [1] : []
     content {
@@ -80,6 +77,23 @@ data "aws_iam_policy_document" "api_role_policy" {
   }
 }
 
+data "aws_iam_policy_document" "api_role_sqs" {
+  count = var.retry_queue_arn != "" ? 1 : 0
+  statement {
+    sid       = "SqsEnqueueRetries"
+    effect    = "Allow"
+    actions   = ["sqs:SendMessage", "sqs:GetQueueUrl"]
+    resources = [var.retry_queue_arn]
+  }
+}
+
+resource "aws_iam_role_policy" "api_role_sqs" {
+  count  = var.retry_queue_arn != "" ? 1 : 0
+  name   = "${var.project_name}-api-role-sqs"
+  role   = aws_iam_role.api_role.id
+  policy = data.aws_iam_policy_document.api_role_sqs[0].json
+}
+
 resource "aws_iam_role_policy" "api_role_policy" {
   name   = "${var.project_name}-api-role-policy"
   role   = aws_iam_role.api_role.id
@@ -87,7 +101,7 @@ resource "aws_iam_role_policy" "api_role_policy" {
 }
 
 # ---------------------------------------------------------------------------
-# shard-worker-role: S3 read/write only
+# shard-worker-role: S3 read/write + DynamoDB + SQS consume (cmd/shardworker)
 # ---------------------------------------------------------------------------
 
 data "aws_iam_policy_document" "shard_worker_role_assume" {
@@ -131,6 +145,26 @@ data "aws_iam_policy_document" "shard_worker_role_policy" {
     effect    = "Allow"
     actions   = ["kms:Decrypt", "kms:GenerateDataKey", "kms:GenerateDataKeyWithoutPlaintext", "kms:DescribeKey"]
     resources = [var.kms_key_arn]
+  }
+
+  dynamic "statement" {
+    for_each = length(var.dynamodb_table_arns) > 0 ? [1] : []
+    content {
+      sid       = "DynamoDbShardAndSession"
+      effect    = "Allow"
+      actions   = ["dynamodb:GetItem", "dynamodb:UpdateItem", "dynamodb:Query"]
+      resources = concat(var.dynamodb_table_arns, [for arn in var.dynamodb_table_arns : "${arn}/index/*"])
+    }
+  }
+
+  dynamic "statement" {
+    for_each = var.retry_queue_arn != "" ? [1] : []
+    content {
+      sid       = "SqsConsumeRetries"
+      effect    = "Allow"
+      actions   = ["sqs:ReceiveMessage", "sqs:DeleteMessage", "sqs:GetQueueAttributes", "sqs:GetQueueUrl"]
+      resources = [var.retry_queue_arn]
+    }
   }
 }
 
