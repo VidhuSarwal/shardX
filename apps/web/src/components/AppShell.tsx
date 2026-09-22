@@ -78,13 +78,13 @@ export const AppShell = ({ children, onHelp }: { children: ReactNode; onHelp?: (
           {user}
         </aside>
       ) : (
-        <header className="sticky top-0 z-40 flex items-center justify-between border-b border-border/60 glass px-4 py-3">
+        <header className="sticky top-0 z-40 flex items-center justify-between border-b border-border/60 glass px-4 py-3" style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top))' }}>
           <Link to="/" className="flex items-center gap-2 font-semibold"><span className="h-3 w-3 rotate-45 bg-gradient-to-br from-primary to-accent" /> ShardX</Link>
           <Button variant="ghost" size="icon" aria-label={open ? 'Close menu' : 'Open menu'} aria-expanded={open} onClick={() => setOpen((v) => !v)}>{open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}</Button>
         </header>
       )}
       {!desktop && open && (
-        <div className="fixed inset-0 z-30 flex flex-col gap-6 bg-background p-5 pt-20">
+        <div className="fixed inset-0 z-30 flex flex-col gap-6 overflow-y-auto bg-background p-5 pt-20" style={{ paddingBottom: 'max(1.25rem, env(safe-area-inset-bottom))' }}>
           {nav}{user}
         </div>
       )}

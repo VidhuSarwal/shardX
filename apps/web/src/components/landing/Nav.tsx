@@ -6,7 +6,7 @@ import { MagneticButton } from '@/components/ds';
 export const Nav = () => {
   const { isAuthenticated } = useAuth();
   return (
-    <header className="fixed inset-x-0 top-0 z-50">
+    <header className="fixed inset-x-0 top-0 z-50" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
       <div className="mx-auto mt-4 flex max-w-6xl items-center justify-between rounded-full glass px-5 py-2.5">
         <Link to="/" className="flex items-center gap-2 font-semibold">
           <span className="h-3 w-3 rotate-45 bg-gradient-to-br from-primary to-accent shadow-glow-primary" />

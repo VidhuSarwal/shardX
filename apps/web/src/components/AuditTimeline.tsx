@@ -18,7 +18,7 @@ export const AuditTimeline = ({ events }: { events: TimelineEvent[] }) => (
       {events.map((e, i) => (
         <li key={i} className="relative pl-6">
           <span className={cn('absolute left-0 top-1.5 h-2.5 w-2.5 rounded-full shadow-[0_0_10px_currentColor]', TONE_DOT[timelineTone(e.type)])} />
-          <div className="flex items-baseline justify-between gap-4">
+          <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
             <span className="text-sm font-medium">{timelineLabel(e)}</span>
             <time className="font-mono text-[11px] text-muted-foreground whitespace-nowrap">
               {e.at ? new Date(e.at).toLocaleString() : '—'}
