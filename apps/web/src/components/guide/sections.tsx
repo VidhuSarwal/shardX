@@ -26,17 +26,19 @@ export const GUIDE_SECTIONS: { id: string; title: string; body: JSX.Element }[] 
       <>
         <p>Drop a file onto the uploader or select one manually. ShardX opens an upload session and streams the file in <strong>5 MB chunks</strong>. You can pause, resume or cancel the upload at any point — a chunk that fails to send retries on its own with exponential backoff, so a flaky connection does not mean starting over.</p>
         <p>Before the shards are written, you choose a sharding strategy:</p>
-        <table>
-          <thead>
-            <tr><th>Strategy</th><th>What it does</th><th>Use when</th></tr>
-          </thead>
-          <tbody>
-            <tr><td><code>balanced</code></td><td>Equal-size shards across all targets</td><td>default; unknown target sizes</td></tr>
-            <tr><td><code>greedy</code></td><td>Fills the target with the most free space first</td><td>one target is much larger</td></tr>
-            <tr><td><code>proportional</code></td><td>Shard sizes proportional to each target&apos;s free space</td><td>mixed capacities</td></tr>
-            <tr><td><code>manual</code></td><td>You pass explicit shard sizes</td><td>reproducible layouts / testing</td></tr>
-          </tbody>
-        </table>
+        <div className="overflow-x-auto">
+          <table>
+            <thead>
+              <tr><th>Strategy</th><th>What it does</th><th>Use when</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><code>balanced</code></td><td>Equal-size shards across all targets</td><td>default; unknown target sizes</td></tr>
+              <tr><td><code>greedy</code></td><td>Fills the target with the most free space first</td><td>one target is much larger</td></tr>
+              <tr><td><code>proportional</code></td><td>Shard sizes proportional to each target&apos;s free space</td><td>mixed capacities</td></tr>
+              <tr><td><code>manual</code></td><td>You pass explicit shard sizes</td><td>reproducible layouts / testing</td></tr>
+            </tbody>
+          </table>
+        </div>
       </>
     ),
   },

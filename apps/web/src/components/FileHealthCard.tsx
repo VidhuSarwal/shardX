@@ -16,8 +16,8 @@ export const FileHealthCard = ({ health }: { health: FileHealth }) => {
   const level = healthLevel(health);
   const { icon: Icon, className, label } = LEVEL_UI[level];
   return (
-    <GlowCard className="flex items-center gap-6">
-      <Ring value={health.health_percentage} />
+    <GlowCard className="flex flex-col items-center gap-4 text-center sm:flex-row sm:items-center sm:gap-6 sm:text-left">
+      <Ring value={health.health_percentage} className="shrink-0" />
       <div className="min-w-0 space-y-2">
         <span className={cn('inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs', className)}>
           <Icon className="h-3.5 w-3.5" /> {label}

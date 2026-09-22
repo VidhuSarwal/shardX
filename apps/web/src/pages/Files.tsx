@@ -270,7 +270,7 @@ const Files = () => {
           }}
           onDragLeave={() => setIsDragging(false)}
           onDrop={handleDrop}
-          className={cn('relative overflow-hidden rounded-2xl border-2 border-dashed p-12 text-center transition-all duration-300', isDragging ? 'border-primary bg-primary/5 shadow-glow-primary scale-[1.01]' : 'border-border hover:border-primary/50')}
+          className={cn('relative overflow-hidden rounded-2xl border-2 border-dashed p-8 text-center transition-all duration-300 sm:p-12', isDragging ? 'border-primary bg-primary/5 shadow-glow-primary scale-[1.01]' : 'border-border hover:border-primary/50')}
         >
           <div aria-hidden className="pointer-events-none absolute inset-0 bg-[linear-gradient(hsl(var(--border))_1px,transparent_1px),linear-gradient(90deg,hsl(var(--border))_1px,transparent_1px)] bg-[size:32px_32px] opacity-30 [mask-image:radial-gradient(ellipse_at_center,black,transparent_70%)]" />
           {isDragging && <span aria-hidden className="pointer-events-none absolute left-1/2 top-1/2 h-24 w-24 -translate-x-1/2 -translate-y-1/2 animate-ping rounded-full border border-primary/60" />}
@@ -329,7 +329,7 @@ const Files = () => {
                   {upload.status === 'awaiting_strategy' && (
                     <div className="mt-4 space-y-3">
                       <div className="flex flex-wrap items-center gap-2">
-                        <div id="strategy" role="radiogroup" aria-label="Distribution strategy" className="inline-flex rounded-lg border border-border p-1">
+                        <div id="strategy" role="radiogroup" aria-label="Distribution strategy" className="inline-flex flex-wrap rounded-lg border border-border p-1">
                           {(['balanced', 'greedy', 'proportional'] as ChunkingStrategy[]).map((s) => (
                             <button key={s} type="button" role="radio" aria-checked={upload.strategy === s} onClick={() => updateUpload(upload.sessionId, { strategy: s })}
                               className={cn('rounded-md px-3 py-1.5 font-mono text-xs transition-colors', upload.strategy === s ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:text-foreground')}>{s}</button>

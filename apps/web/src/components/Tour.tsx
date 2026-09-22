@@ -94,7 +94,7 @@ export const Tour = ({ steps, state, dispatch }: { steps: TourStep[]; state: Tou
     <div className="fixed inset-0 z-[80]" role="dialog" aria-modal="true" aria-labelledby="tour-title">
       <div className="absolute inset-0" onClick={() => dispatch({ type: 'skip' })} />
       <div ref={spot} className="pointer-events-none absolute left-0 top-0 rounded-xl ring-2 ring-primary/70 shadow-[0_0_0_9999px_rgba(3,4,8,0.72)]" />
-      <div ref={card} className="absolute left-0 top-0 w-80 rounded-2xl glass p-5 opacity-0">
+      <div ref={card} className="absolute left-0 top-0 w-80 max-w-[calc(100vw-1.5rem)] rounded-2xl glass p-5 opacity-0">
         <p className="eyebrow mb-2">{state.index + 1} / {steps.length}</p>
         <h3 id="tour-title" className="text-base font-semibold">{step.title}</h3>
         <p className="mt-2 text-sm text-muted-foreground">{step.body}</p>
